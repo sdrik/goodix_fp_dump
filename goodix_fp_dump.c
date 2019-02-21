@@ -12,12 +12,13 @@
 #include <errno.h>
 #include <libusb.h>
 
-#define GOODIX_FP_VID           0x27c6
-#define GOODIX_FP_PID           0x5385
-#define GOODIX_FP_CONFIGURATION 1
-#define GOODIX_FP_INTERFACE     0
-#define GOODIX_FP_IN_EP         0x81
-#define GOODIX_FP_OUT_EP        0x03
+#define GOODIX_FP_VID            0x27c6
+#define GOODIX_FP_PID            0x5385
+#define GOODIX_FP_CONFIGURATION  1
+#define GOODIX_FP_COMM_INTERFACE 0
+#define GOODIX_FP_DATA_INTERFACE 1
+#define GOODIX_FP_IN_EP          0x81
+#define GOODIX_FP_OUT_EP         0x03
 
 #define trace(...) fprintf(stderr, __VA_ARGS__)
 #define error(...) fprintf(stderr, __VA_ARGS__)
@@ -132,6 +133,19 @@ out:
 	return ret;
 }
 
+static int claim_interface(libusb_device_handle *dev, int interface_number)
+{
+	int ret = libusb_claim_interface(dev, interface_number);
+	if (ret < 0) {
+		fprintf(stderr, "libusb_claim_interface failed: %s\n",
+			libusb_error_name(ret));
+		fprintf(stderr, "Cannot claim interface %d\n",
+			interface_number);
+	}
+
+	return ret;
+}
+
 int main(void)
 {
 	libusb_device_handle *dev;
@@ -174,14 +188,14 @@ int main(void)
 
 	libusb_set_auto_detach_kernel_driver(dev, 1);
 
-	ret = libusb_claim_interface(dev, GOODIX_FP_INTERFACE);
-	if (ret < 0) {
-		fprintf(stderr, "libusb_claim_interface failed: %s\n",
-			libusb_error_name(ret));
-		fprintf(stderr, "Cannot claim interface %d\n",
-			GOODIX_FP_INTERFACE);
+	/* Claim both interfaces, the cdc_acm driver may be bound to them. */
+	ret = claim_interface(dev, GOODIX_FP_COMM_INTERFACE);
+	if (ret < 0)
 		goto out_libusb_close;
-	}
+
+	ret = claim_interface(dev, GOODIX_FP_DATA_INTERFACE);
+	if (ret < 0)
+		goto out_libusb_release_comm_interface;
 
 	/*
 	 * Checking that the configuration has not changed, as suggested in
@@ -192,20 +206,22 @@ int main(void)
 	if (ret < 0) {
 		fprintf(stderr, "libusb_get_configuration after claim failed: %s\n",
 			libusb_error_name(ret));
-		goto out_libusb_release_interface;
+		goto out_libusb_release_interfaces;
 	}
 
 	if (current_configuration != GOODIX_FP_CONFIGURATION) {
 		fprintf(stderr, "libusb configuration changed (expected: %d, current: %d)\n",
 			GOODIX_FP_CONFIGURATION, current_configuration);
 		ret = -EINVAL;
-		goto out_libusb_release_interface;
+		goto out_libusb_release_interfaces;
 	}
 
 	init(dev);
 
-out_libusb_release_interface:
-	libusb_release_interface(dev, GOODIX_FP_INTERFACE);
+out_libusb_release_interfaces:
+	libusb_release_interface(dev, GOODIX_FP_DATA_INTERFACE);
+out_libusb_release_comm_interface:
+	libusb_release_interface(dev, GOODIX_FP_COMM_INTERFACE);
 out_libusb_close:
 	libusb_close(dev);
 out_libusb_exit:
