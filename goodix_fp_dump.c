@@ -84,14 +84,231 @@ static int read_data(libusb_device_handle *dev, uint8_t *buffer, unsigned int le
 	return transferred;
 }
 
+static int get_msg_a8_sensor_id(libusb_device_handle *dev)
+{
+	int ret;
+	uint8_t buffer[32768] = { 0 };
+	uint8_t pkt[64] = "\xa8\x03\x00\x00\x00\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" \
+			   "\xed\x00\x00\x00\x00\x00\x00\x00\x88\xba\x33\x0a\xf9\x7f\x00\x00" \
+			   "\x88\xfa\xb7\x53\x15\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" \
+			   "\xa0\xf4\x7c\x21\x91\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" ;
+
+	ret = send_data(dev, pkt, 64);
+	if (ret < 0)
+		goto out;
+
+	ret = read_data(dev, buffer, sizeof(buffer));
+	if (ret < 0)
+		goto out;
+
+	ret = read_data(dev, buffer, sizeof(buffer));
+	if (ret < 0)
+		goto out;
+
+	printf("Sensor model: %s\n", buffer + 3);
+out:
+	return ret;
+}
+
+static int get_msg_a2(libusb_device_handle *dev)
+{
+	int ret;
+	uint8_t buffer[32768] = { 0 };
+	uint8_t pkt[64] = "\xa2\x03\x00\x01\x14\xf0\x00\x00\x3d\xe9\x6d\x0f\xf9\x7f\x00\x00" \
+			   "\xed\x00\x00\x00\x91\x01\x00\x00\x88\xba\x33\x0a\xf9\x7f\x00\x00" \
+			   "\x78\xfa\xb7\x53\x15\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" \
+			   "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00";
+
+	ret = send_data(dev, pkt, 64);
+	if (ret < 0)
+		goto out;
+
+	ret = read_data(dev, buffer, sizeof(buffer));
+	if (ret < 0)
+		goto out;
+
+#if 0
+	ret = read_data(dev, buffer, sizeof(buffer));
+	if (ret < 0)
+		goto out;
+#endif
+
+out:
+	return ret;
+}
+
+static int get_msg_82(libusb_device_handle *dev)
+{
+	int ret;
+	uint8_t buffer[32768] = { 0 };
+	uint8_t pkt[64] = "\x82\x06\x00\x00\x00\x00\x04\x00\x1e\x00\x00\x00\x00\x00\x00\x00" \
+			   "\xed\x00\x00\x00\x00\x00\x00\x00\x88\xba\x33\x0a\xf9\x7f\x00\x00" \
+			   "\xe8\xf9\xb7\x53\x15\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" \
+			   "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00";
+
+	ret = send_data(dev, pkt, 64);
+	if (ret < 0)
+		goto out;
+
+	ret = read_data(dev, buffer, sizeof(buffer));
+	if (ret < 0)
+		goto out;
+
+	ret = read_data(dev, buffer, sizeof(buffer));
+	if (ret < 0)
+		goto out;
+
+out:
+	return ret;
+}
+
+static int get_msg_a6(libusb_device_handle *dev)
+{
+	int ret;
+	uint8_t buffer[32768] = { 0 };
+	uint8_t pkt[64] = "\xa6\x03\x00\x00\x00\x01\x00\x00\x3d\xe9\x6d\x0f\xf9\x7f\x00\x00" \
+			   "\xed\x00\x00\x00\x00\x00\x00\x00\x88\xba\x33\x0a\xf9\x7f\x00\x00" \
+			   "\x88\xf9\xb7\x53\x15\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" \
+			   "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00";
+
+	ret = send_data(dev, pkt, 64);
+	if (ret < 0)
+		goto out;
+
+	ret = read_data(dev, buffer, sizeof(buffer));
+	if (ret < 0)
+		goto out;
+
+	ret = read_data(dev, buffer, sizeof(buffer));
+	if (ret < 0)
+		goto out;
+
+out:
+	return ret;
+}
+
+static int get_msg_e4(libusb_device_handle *dev)
+{
+	int ret;
+	uint8_t buffer[32768] = { 0 };
+	uint8_t pkt1[64] = "\xe4\x05\x00\x01\xb0\x00\x00\x10\x00\x00\x00\x00\x00\x00\x00\x00" \
+			    "\xed\x00\x00\x00\x00\x00\x00\x00\x88\xba\x33\x0a\xf9\x7f\x00\x00" \
+			    "\xa8\xec\xb7\x53\x15\x00\x00\x00\x60\x74\x35\x0a\xf9\x7f\x00\x00" \
+			    "\x00\x00\x00\x00\x00\x00\x00\x00\x40\x27\x7f\x21\x91\x01\x00\x00";
+
+	uint8_t pkt2[64] = "\xe4\x05\x00\x03\xb0\x00\x00\x0e\x00\x00\x00\x00\x00\x00\x00\x00" \
+			    "\xed\x00\x00\x00\x00\x00\x00\x00\x88\xba\x33\x0a\xf9\x7f\x00\x00" \
+			    "\xa8\xec\xb7\x53\x15\x00\x00\x00\x60\x74\x35\x0a\xf9\x7f\x00\x00" \
+			    "\x00\x00\x00\x00\x00\x00\x00\x00\x40\x27\x7f\x21\x91\x01\x00\x00";
+
+
+	ret = send_data(dev, pkt1, 64);
+	if (ret < 0)
+		goto out;
+
+	ret = read_data(dev, buffer, sizeof(buffer));
+	if (ret < 0)
+		goto out;
+
+	ret = read_data(dev, buffer, sizeof(buffer));
+	if (ret < 0)
+		goto out;
+
+	ret = send_data(dev, pkt2, 64);
+	if (ret < 0)
+		goto out;
+
+	ret = read_data(dev, buffer, sizeof(buffer));
+	if (ret < 0)
+		goto out;
+
+	ret = read_data(dev, buffer, sizeof(buffer));
+	if (ret < 0)
+		goto out;
+
+out:
+	return ret;
+}
+
+/* some negotiatoin happens with packet d2 */
+static int get_msg_d2(libusb_device_handle *dev)
+{
+	int ret;
+	uint8_t buffer[32768] = { 0 };
+	uint8_t pkt1[64] = "\xd2\x29\x00\x01\xff\x00\x00\x28\x00\x00\x00\x1b\x98\xfa\xeb\x82" \
+			   "\xd9\x80\xbd\xd7\x28\xbe\x65\x47\xf9\x70\xd7\x94\x5d\xd7\xbf\x48" \
+			   "\x95\x2f\xeb\x42\x38\x29\x40\xfd\xb5\xfb\x11\x8f\x00\x00\x00\x00" \
+			   "\x00\x00\x00\x00\x00\x00\x00\x00\x30\x14\x77\x21\x91\x01\x00\x00";
+
+	uint8_t pkt2[64] = "\xd2\x2d\x00\x03\xff\x00\x00\x2c\x00\x00\x00\xe9\xb6\x54\xc9\x6d" \
+			    "\xe7\x6e\x2a\x19\xf5\x3a\xfc\x96\x35\x6b\x14\x11\x7c\xe3\x9b\x18" \
+			    "\x23\x67\xda\x46\x05\xda\x50\x7d\x75\xc1\x1d\xee\xee\xee\xee\xc3" \
+			    "\x00\x00\x00\x00\x00\x00\x00\x00\x30\x14\x77\x21\x91\x01\x00\x00";
+
+	ret = send_data(dev, pkt1, 64);
+	if (ret < 0)
+		goto out;
+
+	ret = read_data(dev, buffer, sizeof(buffer));
+	if (ret < 0)
+		goto out;
+
+	ret = read_data(dev, buffer, sizeof(buffer));
+	if (ret < 0)
+		goto out;
+
+	ret = send_data(dev, pkt2, 64);
+	if (ret < 0)
+		goto out;
+
+	ret = read_data(dev, buffer, sizeof(buffer));
+	if (ret < 0)
+		goto out;
+
+	ret = read_data(dev, buffer, sizeof(buffer));
+	if (ret < 0)
+		goto out;
+
+	/* If we pass this point negotiation succeeded */
+	trace("Hurrah!\n");
+
+out:
+	return ret;
+}
+
+#if 0
+
+static int get_msg_90(libusb_device_handle *dev)
+{}
+
+static int get_msg_91(libusb_device_handle *dev)
+{}
+
+static int get_msg_36(libusb_device_handle *dev)
+{}
+
+/* this is probably the message to get an image, together with 36 */
+static int get_msg_20(libusb_device_handle *dev)
+{}
+
+/* maybe some shutdown message */
+static int get_msg_60(libusb_device_handle *dev)
+{}
+
+/* maybe some shutdown message */
+static int get_msg_ae(libusb_device_handle *dev)
+{}
+
+/* maybe some shutdown message */
+static int get_msg_32(libusb_device_handle *dev)
+{}
+
+#endif
+
 static int init(libusb_device_handle *dev)
 {
-	uint8_t buffer[32768] = { 0 };
-	uint8_t pkt1[64] = "\xa8\x03\x00\x00\x00\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" \
-			    "\xed\x00\x00\x00\x00\x00\x00\x00\x88\xba\x33\x0a\xf9\x7f\x00\x00" \
-			    "\x88\xfa\xb7\x53\x15\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" \
-			    "\xa0\xf4\x7c\x21\x91\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" ;
 	int ret;
+	uint8_t buffer[32768] = { 0 };
 
 	ret =libusb_control_transfer(dev,
 				     LIBUSB_ENDPOINT_IN |
@@ -115,19 +332,41 @@ static int init(libusb_device_handle *dev)
 	}
 	trace_dump_buffer("<-- received", buffer, ret);
 
-	ret = send_data(dev, pkt1, 64);
-	if (ret < 0)
+	ret = get_msg_a8_sensor_id(dev);
+	if (ret < 0) {
+		error("Error, cannot get sensor ID: %d\n", ret);
 		goto out;
+	}
 
-	ret = read_data(dev, buffer, sizeof(buffer));
-	if (ret < 0)
+	ret = get_msg_a2(dev);
+	if (ret < 0) {
+		error("Error, cannot get sensor ID: %d\n", ret);
 		goto out;
+	}
 
-	ret = read_data(dev, buffer, sizeof(buffer));
-	if (ret < 0)
+	ret = get_msg_82(dev);
+	if (ret < 0) {
+		error("Error, cannot get sensor ID: %d\n", ret);
 		goto out;
+	}
 
-	printf("Sensor model: %s\n", buffer + 3);
+	ret = get_msg_a6(dev);
+	if (ret < 0) {
+		error("Error, cannot get sensor ID: %d\n", ret);
+		goto out;
+	}
+
+	ret = get_msg_e4(dev);
+	if (ret < 0) {
+		error("Error, cannot get sensor ID: %d\n", ret);
+		goto out;
+	}
+
+	ret = get_msg_d2(dev);
+	if (ret < 0) {
+		error("Error, cannot get sensor ID: %d\n", ret);
+		goto out;
+	}
 
 out:
 	return ret;
