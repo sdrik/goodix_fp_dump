@@ -340,31 +340,31 @@ static int init(libusb_device_handle *dev)
 
 	ret = get_msg_a2(dev);
 	if (ret < 0) {
-		error("Error, cannot get sensor ID: %d\n", ret);
+		error("Error, cannot get message 0xa2: %d\n", ret);
 		goto out;
 	}
 
 	ret = get_msg_82(dev);
 	if (ret < 0) {
-		error("Error, cannot get sensor ID: %d\n", ret);
+		error("Error, cannot get message 0x82: %d\n", ret);
 		goto out;
 	}
 
 	ret = get_msg_a6(dev);
 	if (ret < 0) {
-		error("Error, cannot get sensor ID: %d\n", ret);
+		error("Error, cannot get message 0xa6: %d\n", ret);
 		goto out;
 	}
 
 	ret = get_msg_e4(dev);
 	if (ret < 0) {
-		error("Error, cannot get sensor ID: %d\n", ret);
+		error("Error, cannot get message 0xe4: %d\n", ret);
 		goto out;
 	}
 
 	ret = get_msg_d2(dev);
 	if (ret < 0) {
-		error("Error, cannot get sensor ID: %d\n", ret);
+		error("Error, cannot get message 0xd2: %d\n", ret);
 		goto out;
 	}
 
