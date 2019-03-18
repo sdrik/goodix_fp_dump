@@ -23,6 +23,32 @@
 #define trace(...) fprintf(stderr, __VA_ARGS__)
 #define error(...) fprintf(stderr, __VA_ARGS__)
 
+typedef union {
+	uint8_t data[64];
+	struct __attribute__((packed)) {
+		uint8_t type;
+		uint8_t unknown[63];
+	} fields;
+} goodix_fp_out_packet;
+
+/* Numeric types are little-endian.
+ *
+ * Endian conversion is needed if the code is run on big-endian systems.
+ */
+typedef union {
+	uint8_t data[32768];
+	struct __attribute__((packed)) {
+		uint8_t type;
+		uint16_t payload_size;
+		uint8_t unknown[32765];
+	} fields;
+} goodix_fp_in_packet;
+
+typedef enum {
+	GOODIX_FP_PACKET_TYPE_REPLY = 0xb0,
+	GOODIX_FP_PACKET_TYPE_SENSOR_ID = 0xa8,
+} goodix_fp_packet_type;
+
 static inline unsigned int in_80chars(unsigned int i)
 {
 	/* The 3 below is the length of "xx " where xx is the hex string
@@ -45,6 +71,17 @@ static void trace_dump_buffer(const char *message, uint8_t *buffer, unsigned int
 		trace("%02hhX%c", buffer[i], (in_80chars(i) && (i < len - 1)) ? ' ' : '\n');
 	}
 	trace("\n");
+}
+
+static void trace_out_packet(goodix_fp_out_packet *packet)
+{
+	trace("type: 0x%02hhx %d\n", packet->fields.type, packet->fields.type);
+}
+
+static void trace_in_packet(goodix_fp_in_packet *packet)
+{
+	trace("type: 0x%02hhx %d\n", packet->fields.type, packet->fields.type);
+	trace("size: 0x%02hx %d\n", packet->fields.payload_size, packet->fields.payload_size);
 }
 
 static int send_data(libusb_device_handle *dev, uint8_t *buffer, unsigned int len)
@@ -87,25 +124,45 @@ static int read_data(libusb_device_handle *dev, uint8_t *buffer, unsigned int le
 static int get_msg_a8_sensor_id(libusb_device_handle *dev)
 {
 	int ret;
-	uint8_t buffer[32768] = { 0 };
-	uint8_t pkt[64] = "\xa8\x03\x00\x00\x00\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" \
-			   "\xed\x00\x00\x00\x00\x00\x00\x00\x88\xba\x33\x0a\xf9\x7f\x00\x00" \
-			   "\x88\xfa\xb7\x53\x15\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" \
-			   "\xa0\xf4\x7c\x21\x91\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" ;
+	goodix_fp_out_packet pkt = {
+		.data = "\xa8\x03\x00\x00\x00\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" \
+			 "\xed\x00\x00\x00\x00\x00\x00\x00\x88\xba\x33\x0a\xf9\x7f\x00\x00" \
+			 "\x88\xfa\xb7\x53\x15\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" \
+			 "\xa0\xf4\x7c\x21\x91\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+	};
+	goodix_fp_in_packet reply = {
+		.data = { 0 }
+	};
 
-	ret = send_data(dev, pkt, 64);
+	trace_out_packet(&pkt);
+
+	ret = send_data(dev, pkt.data, sizeof(pkt.data));
 	if (ret < 0)
 		goto out;
 
-	ret = read_data(dev, buffer, sizeof(buffer));
+	ret = read_data(dev, reply.data, sizeof(reply.data));
 	if (ret < 0)
 		goto out;
 
-	ret = read_data(dev, buffer, sizeof(buffer));
+	trace_in_packet(&reply);
+
+	if (reply.fields.type != GOODIX_FP_PACKET_TYPE_REPLY) {
+		error("Invalid reply to packet 0xa8\n");
+		return -1;
+	}
+
+	ret = read_data(dev, reply.data, sizeof(reply.data));
 	if (ret < 0)
 		goto out;
 
-	printf("Sensor model: %s\n", buffer + 3);
+	trace_in_packet(&reply);
+
+	if (reply.fields.type != GOODIX_FP_PACKET_TYPE_SENSOR_ID) {
+		error("Invalid reply to packet 0xa8\n");
+		return -1;
+	}
+
+	printf("Sensor model: %s\n", reply.data + 3);
 out:
 	return ret;
 }
