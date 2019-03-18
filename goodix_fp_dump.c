@@ -257,6 +257,12 @@ static int get_msg_d2(libusb_device_handle *dev)
 	if (ret < 0)
 		goto out;
 
+	/*
+	 * It looks like packet 2 content must not be constant, it depends on
+	 * some earlier value or from the reply to the first paket
+	 */
+
+#if 0
 	ret = send_data(dev, pkt2, 64);
 	if (ret < 0)
 		goto out;
@@ -271,6 +277,7 @@ static int get_msg_d2(libusb_device_handle *dev)
 
 	/* If we pass this point negotiation succeeded */
 	trace("Hurrah!\n");
+#endif
 
 out:
 	return ret;
