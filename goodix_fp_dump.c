@@ -48,6 +48,7 @@ typedef enum {
 	GOODIX_FP_PACKET_TYPE_REPLY = 0xb0,
 	GOODIX_FP_PACKET_TYPE_FIRMWARE_VERSION = 0xa8,
 	GOODIX_FP_PACKET_TYPE_OTP = 0xa6,
+	GOODIX_FP_PACKET_TYPE_PSK = 0xe4,
 } goodix_fp_packet_type;
 
 static inline unsigned int in_80chars(unsigned int i)
@@ -317,44 +318,86 @@ out:
 	return ret;
 }
 
-static int get_msg_e4(libusb_device_handle *dev)
+static int get_msg_e4_psk(libusb_device_handle *dev)
 {
 	int ret;
-	uint8_t buffer[32768] = { 0 };
-	uint8_t pkt1[64] = "\xe4\x05\x00\x01\xb0\x00\x00\x10\x00\x00\x00\x00\x00\x00\x00\x00" \
-			    "\xed\x00\x00\x00\x00\x00\x00\x00\x88\xba\x33\x0a\xf9\x7f\x00\x00" \
-			    "\xa8\xec\xb7\x53\x15\x00\x00\x00\x60\x74\x35\x0a\xf9\x7f\x00\x00" \
-			    "\x00\x00\x00\x00\x00\x00\x00\x00\x40\x27\x7f\x21\x91\x01\x00\x00";
+	goodix_fp_out_packet pkt1 = {
+		.data = "\xe4\x05\x00\x01\xb0\x00\x00\x10\x00\x00\x00\x00\x00\x00\x00\x00" \
+			 "\xed\x00\x00\x00\x00\x00\x00\x00\x88\xba\x33\x0a\xf9\x7f\x00\x00" \
+			 "\xa8\xec\xb7\x53\x15\x00\x00\x00\x60\x74\x35\x0a\xf9\x7f\x00\x00" \
+			 "\x00\x00\x00\x00\x00\x00\x00\x00\x40\x27\x7f\x21\x91\x01\x00\x00"
+	};
 
-	uint8_t pkt2[64] = "\xe4\x05\x00\x03\xb0\x00\x00\x0e\x00\x00\x00\x00\x00\x00\x00\x00" \
-			    "\xed\x00\x00\x00\x00\x00\x00\x00\x88\xba\x33\x0a\xf9\x7f\x00\x00" \
-			    "\xa8\xec\xb7\x53\x15\x00\x00\x00\x60\x74\x35\x0a\xf9\x7f\x00\x00" \
-			    "\x00\x00\x00\x00\x00\x00\x00\x00\x40\x27\x7f\x21\x91\x01\x00\x00";
+	goodix_fp_out_packet pkt2 = {
+		.data = "\xe4\x05\x00\x03\xb0\x00\x00\x0e\x00\x00\x00\x00\x00\x00\x00\x00" \
+			 "\xed\x00\x00\x00\x00\x00\x00\x00\x88\xba\x33\x0a\xf9\x7f\x00\x00" \
+			 "\xa8\xec\xb7\x53\x15\x00\x00\x00\x60\x74\x35\x0a\xf9\x7f\x00\x00" \
+			 "\x00\x00\x00\x00\x00\x00\x00\x00\x40\x27\x7f\x21\x91\x01\x00\x00"
+	};
+	goodix_fp_in_packet reply = {
+		.data = { 0 }
+	};
+	uint8_t psk[601] = { 0 };
+	uint8_t hash[41] = { 0 };
 
-
-	ret = send_data(dev, pkt1, 64);
+	ret = send_data(dev, pkt1.data, sizeof(pkt1.data));
 	if (ret < 0)
 		goto out;
 
-	ret = read_data(dev, buffer, sizeof(buffer));
+	ret = read_data(dev, reply.data, sizeof(reply.data));
 	if (ret < 0)
 		goto out;
 
-	ret = read_data(dev, buffer, sizeof(buffer));
+	trace_in_packet(&reply);
+
+	if (reply.fields.type != GOODIX_FP_PACKET_TYPE_REPLY) {
+		error("Invalid reply to packet 0xa6\n");
+		return -1;
+	}
+
+	ret = read_data(dev, reply.data, sizeof(reply.data));
 	if (ret < 0)
 		goto out;
 
-	ret = send_data(dev, pkt2, 64);
+	trace_in_packet(&reply);
+
+	if (reply.fields.type != GOODIX_FP_PACKET_TYPE_PSK) {
+		error("Invalid reply to packet 0xe4\n");
+		return -1;
+	}
+
+	payload_memcpy(psk, reply.fields.payload, reply.fields.payload_size - 1);
+	trace_dump_buffer("PSK:", psk, reply.fields.payload_size - 1);
+	file_dump_buffer("psk.bin", psk, reply.fields.payload_size - 1);
+
+	ret = send_data(dev, pkt2.data, sizeof(pkt2.data));
 	if (ret < 0)
 		goto out;
 
-	ret = read_data(dev, buffer, sizeof(buffer));
+	ret = read_data(dev, reply.data, sizeof(reply.data));
 	if (ret < 0)
 		goto out;
 
-	ret = read_data(dev, buffer, sizeof(buffer));
+	trace_in_packet(&reply);
+
+	if (reply.fields.type != GOODIX_FP_PACKET_TYPE_REPLY) {
+		error("Invalid reply to packet 0xa6\n");
+		return -1;
+	}
+
+	ret = read_data(dev, reply.data, sizeof(reply.data));
 	if (ret < 0)
 		goto out;
+
+	trace_in_packet(&reply);
+
+	if (reply.fields.type != GOODIX_FP_PACKET_TYPE_PSK) {
+		error("Invalid reply to packet 0xe4\n");
+		return -1;
+	}
+
+	memcpy(hash, reply.fields.payload, reply.fields.payload_size - 1);
+	trace_dump_buffer("HASH:", hash, reply.fields.payload_size - 1);
 
 out:
 	return ret;
@@ -493,7 +536,7 @@ static int init(libusb_device_handle *dev)
 		goto out;
 	}
 
-	ret = get_msg_e4(dev);
+	ret = get_msg_e4_psk(dev);
 	if (ret < 0) {
 		error("Error, cannot get message 0xe4: %d\n", ret);
 		goto out;
