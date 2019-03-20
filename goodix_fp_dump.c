@@ -122,6 +122,39 @@ static int read_data(libusb_device_handle *dev, uint8_t *buffer, unsigned int le
 	return transferred;
 }
 
+/*
+ * Long payloads have some bytes on the 64 bytes boundary of the packet which
+ * have to be skipped when copying data.
+ */
+static void payload_memcpy(uint8_t *dst, uint8_t *src, size_t n)
+{
+	unsigned int offset;
+	unsigned int copied;
+	int remaining;
+
+	copied = 0;
+	offset = 0;
+	remaining = n;
+
+	/* skip the header and copy the first chunk of data */
+	memcpy(dst, src, 64 - 3);
+	offset += 64 - 3 + 1;
+	copied += 64 - 3;
+	remaining -= 64 - 3;;
+
+	/* copy most of the data */
+	while (remaining > 64) {
+		memcpy(dst + copied, src + offset, 64 - 1);
+		offset += 64;
+		copied += 64 - 1;
+		remaining -= 64 - 1;
+	}
+
+	/* copy the last chunk if there is one */
+	if (remaining > 0)
+		memcpy(dst + copied, src + offset, remaining);
+}
+
 static int get_msg_a8_firmware_version(libusb_device_handle *dev)
 {
 	int ret;
