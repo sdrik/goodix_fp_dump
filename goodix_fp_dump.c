@@ -40,13 +40,13 @@ typedef union {
 	struct __attribute__((packed)) {
 		uint8_t type;
 		uint16_t payload_size;
-		uint8_t unknown[32765];
+		uint8_t payload[32765];
 	} fields;
 } goodix_fp_in_packet;
 
 typedef enum {
 	GOODIX_FP_PACKET_TYPE_REPLY = 0xb0,
-	GOODIX_FP_PACKET_TYPE_SENSOR_ID = 0xa8,
+	GOODIX_FP_PACKET_TYPE_FIRMWARE_VERSION = 0xa8,
 } goodix_fp_packet_type;
 
 static inline unsigned int in_80chars(unsigned int i)
@@ -121,7 +121,7 @@ static int read_data(libusb_device_handle *dev, uint8_t *buffer, unsigned int le
 	return transferred;
 }
 
-static int get_msg_a8_sensor_id(libusb_device_handle *dev)
+static int get_msg_a8_firmware_version(libusb_device_handle *dev)
 {
 	int ret;
 	goodix_fp_out_packet pkt = {
@@ -133,6 +133,7 @@ static int get_msg_a8_sensor_id(libusb_device_handle *dev)
 	goodix_fp_in_packet reply = {
 		.data = { 0 }
 	};
+	char firmware_version[64] = "";
 
 	trace_out_packet(&pkt);
 
@@ -157,12 +158,14 @@ static int get_msg_a8_sensor_id(libusb_device_handle *dev)
 
 	trace_in_packet(&reply);
 
-	if (reply.fields.type != GOODIX_FP_PACKET_TYPE_SENSOR_ID) {
+	if (reply.fields.type != GOODIX_FP_PACKET_TYPE_FIRMWARE_VERSION) {
 		error("Invalid reply to packet 0xa8\n");
 		return -1;
 	}
 
-	printf("Sensor model: %s\n", reply.data + 3);
+	memcpy(firmware_version, reply.fields.payload, reply.fields.payload_size - 1);
+
+	printf("Firmware version: %s\n", firmware_version);
 out:
 	return ret;
 }
@@ -396,9 +399,9 @@ static int init(libusb_device_handle *dev)
 	}
 	trace_dump_buffer("<-- received", buffer, ret);
 
-	ret = get_msg_a8_sensor_id(dev);
+	ret = get_msg_a8_firmware_version(dev);
 	if (ret < 0) {
-		error("Error, cannot get sensor ID: %d\n", ret);
+		error("Error, cannot get Firmware version: %d\n", ret);
 		goto out;
 	}
 
