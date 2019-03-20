@@ -2,21 +2,22 @@
 
 The USB protocol seems to be quite simple at the packet level:
 
-1. The host send a command packet with a one-byte command ID
-2. The device replies with a generic reply packer (ID 0xB0 followed by a length
-   and the ID of the packet to which this is a reply).
-3. For some commands there are one or more further reply packets, starting with
-   the ID of the command.
+1. The host sends a command packet with a one-byte command ID.
+2. The device replies with a generic reply packet (ID 0xb0) followed by a length
+   field (usually with the value of 3) and a short payload containing the ID of
+   the packet to which this is a reply.
+3. For some commands there are one or further reply packets, starting with the
+   ID of the command, followed by the payload length, and the payload data.
 
 However at some point the data gets encrypted, and it is not clear yet what all the different packets mean and how to encryption is performed.
 
 ## General packet structure
 
-Packets are sent with bulk-out requests of 64 bytes.
+Packets are sent with bulk-out requests of 64 bytes on endpoint 0x03 of interface 1.
 
-Replies are read with bulk-in requests of 32768 bytes.
+Replies are read with bulk-in requests of 32768 bytes on endpoint 0x81 of interface 1.
 
-The [http://kaitai.io/](Kaitai struct) description of the packet is:
+The [http://kaitai.io/](Kaitai struct) description of a packet is:
 
 ```
 meta:
@@ -29,17 +30,44 @@ seq:
 types:
   header:
     seq:
-      - id: packet_type
+      - id: packet_id
         type: u1
         enum: packet_type
+      - id: payload
+        type:
+          switch-on: packet_id
+          cases:
+            'packet_type::reply': payload_reply
+            'packet_type::firmware_version': payload_firmware_version
+            'packet_type::otp': payload_otp
+  payload_reply:
+    seq:
       - id: payload_size
         type: u2
-      - id: payload
-        size: payload_size
+      - id: reply_to
+        type: u1
+        enum: packet_type
+      - id: unknown
+        size: payload_size - 1
+  payload_firmware_version:
+    seq:
+      - id: payload_size
+        type: u2
+      - id: firmware_version
+        type: str
+        encoding: ascii
+        size: payload_size - 1
+  payload_otp:
+    seq:
+      - id: payload_size
+        type: u2
+      - id: otp
+        size: payload_size - 1
 enums:
   packet_type:
     0xb0: reply
-    0xa8: sensor_id 
+    0xa8: firmware_version
+    0xa6: otp
 ```
 
 ## Packet types
