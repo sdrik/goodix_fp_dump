@@ -47,6 +47,7 @@ typedef union {
 typedef enum {
 	GOODIX_FP_PACKET_TYPE_REPLY = 0xb0,
 	GOODIX_FP_PACKET_TYPE_FIRMWARE_VERSION = 0xa8,
+	GOODIX_FP_PACKET_TYPE_OTP = 0xa6,
 } goodix_fp_packet_type;
 
 static inline unsigned int in_80chars(unsigned int i)
@@ -222,27 +223,49 @@ out:
 	return ret;
 }
 
-static int get_msg_a6(libusb_device_handle *dev)
+static int get_msg_a6_otp(libusb_device_handle *dev)
 {
 	int ret;
-	uint8_t buffer[32768] = { 0 };
-	uint8_t pkt[64] = "\xa6\x03\x00\x00\x00\x01\x00\x00\x3d\xe9\x6d\x0f\xf9\x7f\x00\x00" \
-			   "\xed\x00\x00\x00\x00\x00\x00\x00\x88\xba\x33\x0a\xf9\x7f\x00\x00" \
-			   "\x88\xf9\xb7\x53\x15\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" \
-			   "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00";
+	goodix_fp_out_packet pkt = {
+		.data  = "\xa6\x03\x00\x00\x00\x01\x00\x00\x3d\xe9\x6d\x0f\xf9\x7f\x00\x00" \
+			  "\xed\x00\x00\x00\x00\x00\x00\x00\x88\xba\x33\x0a\xf9\x7f\x00\x00" \
+			  "\x88\xf9\xb7\x53\x15\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" \
+			  "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+	};
+	goodix_fp_in_packet reply = {
+		.data = { 0 }
+	};
+	uint8_t otp[32];
 
-	ret = send_data(dev, pkt, 64);
+	ret = send_data(dev, pkt.data, sizeof(pkt.data));
 	if (ret < 0)
 		goto out;
 
-	ret = read_data(dev, buffer, sizeof(buffer));
+	ret = read_data(dev, reply.data, sizeof(reply.data));
 	if (ret < 0)
 		goto out;
 
-	ret = read_data(dev, buffer, sizeof(buffer));
+	trace_in_packet(&reply);
+
+	if (reply.fields.type != GOODIX_FP_PACKET_TYPE_REPLY) {
+		error("Invalid reply to packet 0xa6\n");
+		return -1;
+	}
+
+	ret = read_data(dev, reply.data, sizeof(reply.data));
 	if (ret < 0)
 		goto out;
 
+	trace_in_packet(&reply);
+
+	if (reply.fields.type != GOODIX_FP_PACKET_TYPE_OTP) {
+		error("Invalid reply to packet 0xa6\n");
+		return -1;
+	}
+
+	memcpy(otp, reply.fields.payload, reply.fields.payload_size - 1);
+
+	trace_dump_buffer("OTP:", otp, sizeof(otp));
 out:
 	return ret;
 }
@@ -417,9 +440,9 @@ static int init(libusb_device_handle *dev)
 		goto out;
 	}
 
-	ret = get_msg_a6(dev);
+	ret = get_msg_a6_otp(dev);
 	if (ret < 0) {
-		error("Error, cannot get message 0xa6: %d\n", ret);
+		error("Error, cannot get OTP: %d\n", ret);
 		goto out;
 	}
 
