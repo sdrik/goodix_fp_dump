@@ -74,6 +74,20 @@ static void trace_dump_buffer(const char *message, uint8_t *buffer, unsigned int
 	trace("\n");
 }
 
+static void file_dump_buffer(const char *filename, uint8_t *buffer, unsigned int len)
+{
+	FILE *fp;
+
+	fp = fopen(filename, "wb");
+	if (fp == NULL) {
+		perror(filename);
+		return;
+	}
+
+	fwrite(buffer, 1, len, fp);
+	fclose(fp);
+}
+
 static void trace_out_packet(goodix_fp_out_packet *packet)
 {
 	trace("type: 0x%02hhx %d\n", packet->fields.type, packet->fields.type);
