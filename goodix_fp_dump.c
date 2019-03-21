@@ -23,18 +23,20 @@
 #define trace(...) fprintf(stderr, __VA_ARGS__)
 #define error(...) fprintf(stderr, __VA_ARGS__)
 
+/*
+ * The device expects umeric values as little-endian.
+ *
+ * Endian conversion is needed if the code is run on big-endian systems.
+ */
 typedef union {
 	uint8_t data[64];
 	struct __attribute__((packed)) {
 		uint8_t type;
-		uint8_t unknown[63];
+		uint16_t payload_size;
+		uint8_t unknown[61];
 	} fields;
 } goodix_fp_out_packet;
 
-/* Numeric types are little-endian.
- *
- * Endian conversion is needed if the code is run on big-endian systems.
- */
 typedef union {
 	uint8_t data[32768];
 	struct __attribute__((packed)) {
@@ -91,13 +93,18 @@ static void file_dump_buffer(const char *filename, uint8_t *buffer, unsigned int
 
 static void trace_out_packet(goodix_fp_out_packet *packet)
 {
+	trace("\n");
+	trace("out packet\n");
 	trace("type: 0x%02hhx %d\n", packet->fields.type, packet->fields.type);
+	trace("size: 0x%02hx %d\n", packet->fields.payload_size, packet->fields.payload_size);
 }
 
 static void trace_in_packet(goodix_fp_in_packet *packet)
 {
+	trace("in packet\n");
 	trace("type: 0x%02hhx %d\n", packet->fields.type, packet->fields.type);
 	trace("size: 0x%02hx %d\n", packet->fields.payload_size, packet->fields.payload_size);
+	trace("\n");
 }
 
 static int send_data(libusb_device_handle *dev, uint8_t *buffer, unsigned int len)
