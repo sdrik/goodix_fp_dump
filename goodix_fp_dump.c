@@ -414,28 +414,48 @@ out:
 static int get_msg_d2(libusb_device_handle *dev)
 {
 	int ret;
-	uint8_t buffer[32768] = { 0 };
-	uint8_t pkt1[64] = "\xd2\x29\x00\x01\xff\x00\x00\x28\x00\x00\x00\x1b\x98\xfa\xeb\x82" \
-			   "\xd9\x80\xbd\xd7\x28\xbe\x65\x47\xf9\x70\xd7\x94\x5d\xd7\xbf\x48" \
-			   "\x95\x2f\xeb\x42\x38\x29\x40\xfd\xb5\xfb\x11\x8f\x00\x00\x00\x00" \
-			   "\x00\x00\x00\x00\x00\x00\x00\x00\x30\x14\x77\x21\x91\x01\x00\x00";
+	goodix_fp_out_packet pkt1 = {
+		.data = "\xd2\x29\x00\x01\xff\x00\x00\x28\x00\x00\x00\x1b\x98\xfa\xeb\x82" \
+			 "\xd9\x80\xbd\xd7\x28\xbe\x65\x47\xf9\x70\xd7\x94\x5d\xd7\xbf\x48" \
+			 "\x95\x2f\xeb\x42\x38\x29\x40\xfd\xb5\xfb\x11\x8f\x00\x00\x00\x00" \
+			 "\x00\x00\x00\x00\x00\x00\x00\x00\x30\x14\x77\x21\x91\x01\x00\x00"
+	};
 
-	uint8_t pkt2[64] = "\xd2\x2d\x00\x03\xff\x00\x00\x2c\x00\x00\x00\xe9\xb6\x54\xc9\x6d" \
-			    "\xe7\x6e\x2a\x19\xf5\x3a\xfc\x96\x35\x6b\x14\x11\x7c\xe3\x9b\x18" \
-			    "\x23\x67\xda\x46\x05\xda\x50\x7d\x75\xc1\x1d\xee\xee\xee\xee\xc3" \
-			    "\x00\x00\x00\x00\x00\x00\x00\x00\x30\x14\x77\x21\x91\x01\x00\x00";
+	goodix_fp_out_packet pkt2 = {
+		.data = "\xd2\x2d\x00\x03\xff\x00\x00\x2c\x00\x00\x00\xe9\xb6\x54\xc9\x6d" \
+			 "\xe7\x6e\x2a\x19\xf5\x3a\xfc\x96\x35\x6b\x14\x11\x7c\xe3\x9b\x18" \
+			 "\x23\x67\xda\x46\x05\xda\x50\x7d\x75\xc1\x1d\xee\xee\xee\xee\xc3" \
+			 "\x00\x00\x00\x00\x00\x00\x00\x00\x30\x14\x77\x21\x91\x01\x00\x00"
+	};
+	goodix_fp_in_packet reply = {
+		.data = { 0 }
+	};
 
-	ret = send_data(dev, pkt1, 64);
+	ret = send_data(dev, pkt1.data, sizeof(pkt1.data));
 	if (ret < 0)
 		goto out;
 
-	ret = read_data(dev, buffer, sizeof(buffer));
+	ret = read_data(dev, reply.data, sizeof(reply.data));
 	if (ret < 0)
 		goto out;
 
-	ret = read_data(dev, buffer, sizeof(buffer));
+	trace_in_packet(&reply);
+
+	if (reply.fields.type != GOODIX_FP_PACKET_TYPE_REPLY) {
+		error("Invalid reply to packet 0xd2\n");
+		return -1;
+	}
+
+	ret = read_data(dev, reply.data, sizeof(reply.data));
 	if (ret < 0)
 		goto out;
+
+	trace_in_packet(&reply);
+
+	if (reply.fields.type != 0xd2) {
+		error("Invalid reply to packet 0xd2\n");
+		return -1;
+	}
 
 	/*
 	 * It looks like packet 2 content must not be constant, it depends on
@@ -443,17 +463,31 @@ static int get_msg_d2(libusb_device_handle *dev)
 	 */
 
 #if 0
-	ret = send_data(dev, pkt2, 64);
+	ret = send_data(dev, pkt2.data, sizeof(pkt2.data));
 	if (ret < 0)
 		goto out;
 
-	ret = read_data(dev, buffer, sizeof(buffer));
+	ret = read_data(dev, reply.data, sizeof(reply.data));
 	if (ret < 0)
 		goto out;
 
-	ret = read_data(dev, buffer, sizeof(buffer));
+	trace_in_packet(&reply);
+
+	if (reply.fields.type != GOODIX_FP_PACKET_TYPE_REPLY) {
+		error("Invalid reply to packet 0xd2\n");
+		return -1;
+	}
+
+	ret = read_data(dev, reply.data, sizeof(reply.data));
 	if (ret < 0)
 		goto out;
+
+	trace_in_packet(&reply);
+
+	if (reply.fields.type != 0xd2) {
+		error("Invalid reply to packet 0xd2\n");
+		return -1;
+	}
 
 	/* If we pass this point negotiation succeeded */
 	trace("Hurrah!\n");
