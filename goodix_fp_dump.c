@@ -351,7 +351,7 @@ static int get_msg_e4_psk(libusb_device_handle *dev)
 	trace_in_packet(&reply);
 
 	if (reply.fields.type != GOODIX_FP_PACKET_TYPE_REPLY) {
-		error("Invalid reply to packet 0xa6\n");
+		error("Invalid reply to packet 0xe4\n");
 		return -1;
 	}
 
@@ -381,7 +381,7 @@ static int get_msg_e4_psk(libusb_device_handle *dev)
 	trace_in_packet(&reply);
 
 	if (reply.fields.type != GOODIX_FP_PACKET_TYPE_REPLY) {
-		error("Invalid reply to packet 0xa6\n");
+		error("Invalid reply to packet 0xe4\n");
 		return -1;
 	}
 
@@ -403,7 +403,7 @@ out:
 	return ret;
 }
 
-/* some negotiatoin happens with packet d2 */
+/* some negotiation happens with packet d2 */
 static int get_msg_d2(libusb_device_handle *dev)
 {
 	int ret;
@@ -432,7 +432,7 @@ static int get_msg_d2(libusb_device_handle *dev)
 
 	/*
 	 * It looks like packet 2 content must not be constant, it depends on
-	 * some earlier value or from the reply to the first paket
+	 * some earlier value or from the reply to the first packet
 	 */
 
 #if 0
