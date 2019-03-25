@@ -53,13 +53,6 @@ typedef enum {
 	GOODIX_FP_PACKET_TYPE_PSK = 0xe4,
 } goodix_fp_packet_type;
 
-static inline unsigned int in_80chars(unsigned int i)
-{
-	/* The 3 below is the length of "xx " where xx is the hex string
-	 * representation of a byte */
-	return ((i + 1) % (80 / 3));
-}
-
 static void trace_dump_buffer(const char *message, uint8_t *buffer, unsigned int len)
 {
 	unsigned int i;
@@ -72,7 +65,7 @@ static void trace_dump_buffer(const char *message, uint8_t *buffer, unsigned int
 		trace("%s\n", message);
 
 	for (i = 0; i < len; i++) {
-		trace("%02hhX%c", buffer[i], (in_80chars(i) && (i < len - 1)) ? ' ' : '\n');
+		trace("%02hhX%c", buffer[i], (((i + 1) % 16) && (i < len - 1)) ? ' ' : '\n');
 	}
 	trace("\n");
 }
