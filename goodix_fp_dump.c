@@ -70,7 +70,7 @@ static void trace_dump_buffer(const char *message, uint8_t *buffer, unsigned int
 	trace("\n");
 }
 
-static void file_dump_buffer(const char *filename, uint8_t *buffer, unsigned int len)
+static void trace_dump_buffer_to_file(const char *filename, uint8_t *buffer, unsigned int len)
 {
 	FILE *fp;
 
@@ -314,6 +314,7 @@ static int get_msg_a6_otp(libusb_device_handle *dev)
 	memcpy(otp, reply.fields.payload, reply.fields.payload_size - 1);
 
 	trace_dump_buffer("OTP:", otp, sizeof(otp));
+	trace_dump_buffer_to_file("payload_otp.bin", otp, sizeof(otp));
 out:
 	return ret;
 }
@@ -367,8 +368,8 @@ static int get_msg_e4_psk(libusb_device_handle *dev)
 	}
 
 	payload_memcpy(psk, reply.fields.payload, reply.fields.payload_size - 1);
-	trace_dump_buffer("PSK:", psk, reply.fields.payload_size - 1);
-	file_dump_buffer("psk.bin", psk, reply.fields.payload_size - 1);
+	trace_dump_buffer("PSK:", psk, sizeof(psk));
+	trace_dump_buffer_to_file("payload_psk.bin", psk, sizeof(psk));
 
 	ret = send_data(dev, pkt2.data, sizeof(pkt2.data));
 	if (ret < 0)
@@ -397,7 +398,8 @@ static int get_msg_e4_psk(libusb_device_handle *dev)
 	}
 
 	memcpy(hash, reply.fields.payload, reply.fields.payload_size - 1);
-	trace_dump_buffer("HASH:", hash, reply.fields.payload_size - 1);
+	trace_dump_buffer("HASH:", hash, sizeof(hash));
+	trace_dump_buffer_to_file("payload_hash.bin", hash, sizeof(hash));
 
 out:
 	return ret;
@@ -659,8 +661,7 @@ static int get_msg_20(libusb_device_handle *dev)
 	}
 
 	payload_memcpy(image, reply.fields.payload, reply.fields.payload_size - 1);
-	trace_dump_buffer("image:", image, reply.fields.payload_size - 1);
-	file_dump_buffer("image.bin", image, reply.fields.payload_size - 1);
+	trace_dump_buffer_to_file("payload_image.bin", image, reply.fields.payload_size - 1);
 
 out:
 	return ret;
