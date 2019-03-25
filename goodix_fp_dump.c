@@ -367,6 +367,26 @@ static int get_msg_e4_psk(libusb_device_handle *dev)
 		return -1;
 	}
 
+	/*
+	 * The PSK payload contains one leading byte representing an error
+	 * code, followed by Type-Length-Value data.
+	 *
+	 * The TLV structure is as follows.
+	 *
+	 * The Type field is uint32_t (little-endian):
+	 *   - 0x0000b001 means PSK
+	 *   - 0x0000b003 mean HASH
+	 *
+	 * The Length field is uint32_t (little-endian):
+	 *   - 0x00000250 for the PSK
+	 *   - 0x00000020 for the HASH
+	 *
+	 * Then the data follows:
+	 *   - for the PSK this is a sgx_sealed_data_t
+	 *     https://software.intel.com/en-us/sgx-sdk-dev-reference-sgx-sealed-data-t
+	 *   - for the HASH it should be 32 bytes representing a sha256 hash
+	 *     of something from the PSK, after unsealing the data
+	 */
 	payload_memcpy(psk, reply.fields.payload, reply.fields.payload_size - 1);
 	trace_dump_buffer("PSK:", psk, sizeof(psk));
 	trace_dump_buffer_to_file("payload_psk.bin", psk, sizeof(psk));
