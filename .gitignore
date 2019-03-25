@@ -1,4 +1,5 @@
 *~
 *.swp
 *.o
+*.bin
 goodix_fp_dump
