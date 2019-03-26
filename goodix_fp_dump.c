@@ -91,7 +91,10 @@ static void trace_out_packet(goodix_fp_out_packet *packet)
 	trace("\n");
 	trace("out packet\n");
 	trace("type: 0x%02hhx %d\n", packet->fields.type, packet->fields.type);
-	trace("size: 0x%02hx %d\n", packet->fields.payload_size, packet->fields.payload_size);
+	if (packet->fields.type % 2)
+		trace("continuation packet\n");
+	else
+		trace("size: 0x%02hx %d\n", packet->fields.payload_size, packet->fields.payload_size);
 }
 
 static void trace_in_packet(goodix_fp_in_packet *packet)
