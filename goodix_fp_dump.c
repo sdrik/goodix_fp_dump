@@ -9,6 +9,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stdbool.h>
 #include <errno.h>
 #include <libusb.h>
 
@@ -146,16 +147,18 @@ static int read_data(libusb_device_handle *dev, uint8_t *buffer, unsigned int le
  * Long payloads have some bytes on the 64 bytes boundary of the packet which
  * have to be skipped when copying data.
  */
-static void payload_memcpy(uint8_t *dst, uint8_t *src, size_t n)
+static unsigned int payload_memcpy(uint8_t *dst, uint8_t *src, size_t n)
 {
 	unsigned int src_offset;
 	unsigned int dst_offset;
 	int chunk_size;
 	int remaining;
+	unsigned int extra_packets;
 
 	src_offset = 0;
 	dst_offset = 0;
 	remaining = n;
+	extra_packets = 0;
 
 	/* skip the header and copy the first chunk of data */
 	chunk_size = MIN(n, 64 - 3);
@@ -171,32 +174,91 @@ static void payload_memcpy(uint8_t *dst, uint8_t *src, size_t n)
 		src_offset += chunk_size + 1; /* skip the next continuation byte */
 		dst_offset += chunk_size;
 		remaining -= chunk_size;
+		extra_packets++;
 	}
 
 	/* copy the last chunk if there is one */
-	if (remaining > 0)
+	if (remaining > 0) {
 		memcpy(dst + dst_offset, src + src_offset, remaining);
+		extra_packets++;
+	}
+
+	return extra_packets;
 }
 
-static int get_msg_a8_firmware_version(libusb_device_handle *dev)
+static uint8_t calc_checksum(uint8_t packet_type, uint8_t *payload, uint16_t payload_size)
 {
-	int ret;
-	goodix_fp_out_packet pkt = {
-		.data = "\xa8\x03\x00\x00\x00\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" \
-			 "\xed\x00\x00\x00\x00\x00\x00\x00\x88\xba\x33\x0a\xf9\x7f\x00\x00" \
-			 "\x88\xfa\xb7\x53\x15\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" \
-			 "\xa0\xf4\x7c\x21\x91\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+	unsigned int i;
+	uint8_t sum;
+
+	sum = packet_type;
+	sum += (payload_size + 1) & 0xff;
+	sum += (payload_size + 1) >> 8;
+	for (i = 0; i < payload_size; i++)
+		sum += payload[i];
+
+	return (uint8_t)(0xaa - sum);
+}
+
+static bool verify_checksum(uint8_t packet_type, uint8_t *payload, uint16_t payload_size, uint8_t checksum)
+{
+	uint8_t sum;
+
+	sum = calc_checksum(packet_type, payload, payload_size);
+
+	return sum == checksum;
+}
+
+static unsigned int send_multi_packet(libusb_device_handle *dev,
+				      goodix_fp_packet_type packet_type,
+				      uint8_t *request, uint16_t request_size)
+{
+	(void) dev;
+	(void) packet_type;
+	(void) request;
+	(void) request_size;
+
+	trace("multi packet requests not implemented yet\n");
+	return -1;
+}
+
+static int send_packet(libusb_device_handle *dev,
+		       goodix_fp_packet_type packet_type,
+		       uint8_t *request, uint16_t request_size,
+		       uint8_t *response, uint16_t *response_size,
+		       bool fixed_checksum)
+{
+	goodix_fp_out_packet packet = {
+		.fields = {
+			.type = packet_type,
+			.payload_size = request_size + 1,
+			.payload = { 0 }
+		}
 	};
 	goodix_fp_in_packet reply = {
 		.data = { 0 }
 	};
-	char firmware_version[64] = "";
+	int ret;
+	uint8_t checksum;
+	bool is_valid_checksum;
 
-	trace_out_packet(&pkt);
+	/* If the request buffer fits into a single packet, send it */
+	if (request_size + 1 < 64 - 3) {
+		memcpy(packet.fields.payload, request, request_size);
 
-	ret = send_data(dev, pkt.data, sizeof(pkt.data));
-	if (ret < 0)
-		goto out;
+		checksum = calc_checksum(packet_type, request, request_size);
+		packet.fields.payload[request_size] = checksum;
+
+		trace_out_packet(&packet);
+
+		ret = send_data(dev, packet.data, sizeof(packet.data));
+		if (ret < 0)
+			goto out;
+	} else {
+		ret = send_multi_packet(dev, packet_type, request, request_size);
+		if (ret < 0)
+			goto out;
+	}
 
 	ret = read_data(dev, reply.data, sizeof(reply.data));
 	if (ret < 0)
@@ -205,22 +267,85 @@ static int get_msg_a8_firmware_version(libusb_device_handle *dev)
 	trace_in_packet(&reply);
 
 	if (reply.fields.type != GOODIX_FP_PACKET_TYPE_REPLY) {
-		error("Invalid reply to packet 0xa8\n");
-		return -1;
+		error("Invalid reply to packet %02x\n", packet.fields.type);
+		ret = -1;
+		goto out;
 	}
 
-	ret = read_data(dev, reply.data, sizeof(reply.data));
+	is_valid_checksum = verify_checksum(reply.fields.type,
+					    reply.fields.payload,
+					    reply.fields.payload_size - 1,
+					    reply.fields.payload[reply.fields.payload_size - 1]);
+	if (!is_valid_checksum) {
+		error("Invalid checksum for reply packet %02x\n", packet.fields.type);
+		ret = -1;
+		goto out;
+	}
+
+	if (response) {
+		int extra_packets;
+		uint8_t response_checksum;
+
+		ret = read_data(dev, reply.data, sizeof(reply.data));
+		if (ret < 0)
+			goto out;
+
+		trace_in_packet(&reply);
+
+		if (reply.fields.type != packet_type) {
+			error("Invalid input packet %02x (got: %02x)\n", packet_type, reply.fields.type);
+			ret = -1;
+			goto out;
+		}
+
+		extra_packets = payload_memcpy(response, reply.fields.payload, reply.fields.payload_size - 1);
+
+		if (fixed_checksum) {
+			response_checksum = 0x88;
+		} else {
+			response_checksum = reply.fields.payload[reply.fields.payload_size - 1 + extra_packets];
+		}
+
+		is_valid_checksum = verify_checksum(reply.fields.type,
+						    response,
+						    reply.fields.payload_size - 1,
+						    response_checksum);
+		if (!is_valid_checksum) {
+			error("Invalid checksum for input packet %02x\n", reply.fields.type);
+			ret = -1;
+			goto out;
+		}
+
+		*response_size = reply.fields.payload_size - 1;
+	}
+
+	ret = 0;
+
+out:
+	return ret;
+
+}
+
+static int send_simple_packet(libusb_device_handle *dev,
+			      goodix_fp_packet_type packet_type,
+			      uint8_t *response,  uint16_t *response_size)
+{
+	uint8_t payload[2] = { 0 };
+
+	return send_packet(dev, packet_type, payload, 2, response, response_size, false);
+}
+
+static int get_msg_a8_firmware_version(libusb_device_handle *dev)
+{
+	int ret;
+	char firmware_version[64] = "";
+	uint16_t string_len;
+
+
+	ret = send_simple_packet(dev, GOODIX_FP_PACKET_TYPE_FIRMWARE_VERSION,
+				 (uint8_t *)firmware_version, &string_len);
 	if (ret < 0)
 		goto out;
-
-	trace_in_packet(&reply);
-
-	if (reply.fields.type != GOODIX_FP_PACKET_TYPE_FIRMWARE_VERSION) {
-		error("Invalid reply to packet 0xa8\n");
-		return -1;
-	}
-
-	memcpy(firmware_version, reply.fields.payload, reply.fields.payload_size - 1);
 
 	printf("Firmware version: %s\n", firmware_version);
 out:
