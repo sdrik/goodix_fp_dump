@@ -562,84 +562,44 @@ out:
 static int get_msg_d2(libusb_device_handle *dev)
 {
 	int ret;
-	goodix_fp_out_packet pkt1 = {
-		.data = "\xd2\x29\x00\x01\xff\x00\x00\x28\x00\x00\x00\x1b\x98\xfa\xeb\x82" \
-			 "\xd9\x80\xbd\xd7\x28\xbe\x65\x47\xf9\x70\xd7\x94\x5d\xd7\xbf\x48" \
-			 "\x95\x2f\xeb\x42\x38\x29\x40\xfd\xb5\xfb\x11\x8f\x00\x00\x00\x00" \
-			 "\x00\x00\x00\x00\x00\x00\x00\x00\x30\x14\x77\x21\x91\x01\x00\x00"
-	};
+	unsigned int i;
+	uint8_t client_hello[32 + 8] = "\x01\xff\x00\x00\x28\x00\x00\x00";
+	uint8_t server_reply[64 + 8] = { 0 } ;
+	uint16_t server_reply_size = 0;
+	uint8_t client_handshake[32 + 8 + 4] = "\x03\xff\x00\x00\x2c\x00\x00\x00";
 
-	goodix_fp_out_packet pkt2 = {
-		.data = "\xd2\x2d\x00\x03\xff\x00\x00\x2c\x00\x00\x00\xe9\xb6\x54\xc9\x6d" \
-			 "\xe7\x6e\x2a\x19\xf5\x3a\xfc\x96\x35\x6b\x14\x11\x7c\xe3\x9b\x18" \
-			 "\x23\x67\xda\x46\x05\xda\x50\x7d\x75\xc1\x1d\xee\xee\xee\xee\xc3" \
-			 "\x00\x00\x00\x00\x00\x00\x00\x00\x30\x14\x77\x21\x91\x01\x00\x00"
-	};
-	goodix_fp_in_packet reply = {
-		.data = { 0 }
-	};
+	/* Use a constant secret for now */
+	for (i = 0; i < 32; i++)
+		client_hello[i + 8] = 0;
 
-	ret = send_data(dev, pkt1.data, sizeof(pkt1.data));
+	trace_dump_buffer_to_file("client_random.bin", client_hello + 8, 32);
+
+	ret = send_packet(dev, 0xd2, client_hello, sizeof(client_hello), server_reply, &server_reply_size, false);
 	if (ret < 0)
 		goto out;
-
-	ret = read_data(dev, reply.data, sizeof(reply.data));
-	if (ret < 0)
-		goto out;
-
-	trace_in_packet(&reply);
-
-	if (reply.fields.type != GOODIX_FP_PACKET_TYPE_REPLY) {
-		error("Invalid reply to packet 0xd2\n");
-		return -1;
-	}
-
-	ret = read_data(dev, reply.data, sizeof(reply.data));
-	if (ret < 0)
-		goto out;
-
-	trace_in_packet(&reply);
-
-	if (reply.fields.type != 0xd2) {
-		error("Invalid reply to packet 0xd2\n");
-		return -1;
-	}
 
 	/*
 	 * It looks like packet 2 content must not be constant, it depends on
 	 * some earlier value or from the reply to the first packet
 	 */
 
-#if 0
-	ret = send_data(dev, pkt2.data, sizeof(pkt2.data));
+	trace_dump_buffer_to_file("server_random1.bin", server_reply + 8, 32);
+	trace_dump_buffer_to_file("server_random2.bin", server_reply + 8 + 32, 32);
+
+	trace_dump_buffer("server_reply:", server_reply, sizeof(server_reply));
+
+	/* copy the server key into the reply packet */
+	memcpy(client_handshake + 8, server_reply + 8 + 32, 32);
+
+	/* add some constant bytes */
+	memcpy(client_handshake + 8 + 32, "\xee\xee\xee\xee", 4);
+
+	ret = send_packet(dev, 0xd2, client_handshake, sizeof(client_handshake), NULL, NULL, false);
 	if (ret < 0)
 		goto out;
-
-	ret = read_data(dev, reply.data, sizeof(reply.data));
-	if (ret < 0)
-		goto out;
-
-	trace_in_packet(&reply);
-
-	if (reply.fields.type != GOODIX_FP_PACKET_TYPE_REPLY) {
-		error("Invalid reply to packet 0xd2\n");
-		return -1;
-	}
-
-	ret = read_data(dev, reply.data, sizeof(reply.data));
-	if (ret < 0)
-		goto out;
-
-	trace_in_packet(&reply);
-
-	if (reply.fields.type != 0xd2) {
-		error("Invalid reply to packet 0xd2\n");
-		return -1;
-	}
 
 	/* If we pass this point negotiation succeeded */
 	trace("Hurrah!\n");
-#endif
 
 out:
 	return ret;
