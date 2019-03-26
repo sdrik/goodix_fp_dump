@@ -23,6 +23,8 @@
 #define trace(...) fprintf(stderr, __VA_ARGS__)
 #define error(...) fprintf(stderr, __VA_ARGS__)
 
+#define MIN(a,b) (((a)<(b))?(a):(b))
+
 /*
  * The device expects umeric values as little-endian.
  *
@@ -143,31 +145,34 @@ static int read_data(libusb_device_handle *dev, uint8_t *buffer, unsigned int le
  */
 static void payload_memcpy(uint8_t *dst, uint8_t *src, size_t n)
 {
-	unsigned int offset;
-	unsigned int copied;
+	unsigned int src_offset;
+	unsigned int dst_offset;
+	int chunk_size;
 	int remaining;
 
-	copied = 0;
-	offset = 0;
+	src_offset = 0;
+	dst_offset = 0;
 	remaining = n;
 
 	/* skip the header and copy the first chunk of data */
-	memcpy(dst, src, 64 - 3);
-	offset += 64 - 3 + 1;
-	copied += 64 - 3;
-	remaining -= 64 - 3;;
+	chunk_size = MIN(n, 64 - 3);
+	memcpy(dst, src, chunk_size);
+	src_offset += chunk_size + 1; /* skip the next continuation byte */
+	dst_offset += chunk_size;
+	remaining -= chunk_size;
 
-	/* copy most of the data */
-	while (remaining > 64) {
-		memcpy(dst + copied, src + offset, 64 - 1);
-		offset += 64;
-		copied += 64 - 1;
-		remaining -= 64 - 1;
+	/* copy most of the data, skipping the continuation bytes */
+	chunk_size = 64 - 1;
+	while (remaining >= chunk_size) {
+		memcpy(dst + dst_offset, src + src_offset, chunk_size);
+		src_offset += chunk_size + 1; /* skip the next continuation byte */
+		dst_offset += chunk_size;
+		remaining -= chunk_size;
 	}
 
 	/* copy the last chunk if there is one */
 	if (remaining > 0)
-		memcpy(dst + copied, src + offset, remaining);
+		memcpy(dst + dst_offset, src + src_offset, remaining);
 }
 
 static int get_msg_a8_firmware_version(libusb_device_handle *dev)
