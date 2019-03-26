@@ -35,7 +35,7 @@ typedef union {
 	struct __attribute__((packed)) {
 		uint8_t type;
 		uint16_t payload_size;
-		uint8_t unknown[61];
+		uint8_t payload[61];
 	} fields;
 } goodix_fp_out_packet;
 
