@@ -60,6 +60,7 @@ typedef union {
 typedef enum {
 	GOODIX_FP_PACKET_TYPE_REPLY = 0xb0,
 	GOODIX_FP_PACKET_TYPE_FIRMWARE_VERSION = 0xa8,
+	GOODIX_FP_PACKET_TYPE_RESET = 0xa2,
 	GOODIX_FP_PACKET_TYPE_OTP = 0xa6,
 	GOODIX_FP_PACKET_TYPE_HANDSHAKE = 0xd2,
 	GOODIX_FP_PACKET_TYPE_PSK = 0xe4,
@@ -381,31 +382,11 @@ out:
 	return ret;
 }
 
-static int get_msg_a2(libusb_device_handle *dev)
+static int get_msg_a2_reset(libusb_device_handle *dev)
 {
-	int ret;
-	uint8_t buffer[32768] = { 0 };
-	uint8_t pkt[64] = "\xa2\x03\x00\x01\x14\xf0\x00\x00\x3d\xe9\x6d\x0f\xf9\x7f\x00\x00" \
-			   "\xed\x00\x00\x00\x91\x01\x00\x00\x88\xba\x33\x0a\xf9\x7f\x00\x00" \
-			   "\x78\xfa\xb7\x53\x15\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" \
-			   "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00";
+	uint8_t payload[2] = { 0x01, 0x14 };
 
-	ret = send_data(dev, pkt, 64);
-	if (ret < 0)
-		goto out;
-
-	ret = read_data(dev, buffer, sizeof(buffer));
-	if (ret < 0)
-		goto out;
-
-#if 0
-	ret = read_data(dev, buffer, sizeof(buffer));
-	if (ret < 0)
-		goto out;
-#endif
-
-out:
-	return ret;
+	return send_packet(dev, GOODIX_FP_PACKET_TYPE_RESET, payload, 2, NULL, NULL);
 }
 
 static int get_msg_82(libusb_device_handle *dev)
@@ -863,9 +844,9 @@ static int init(libusb_device_handle *dev)
 		goto out;
 	}
 
-	ret = get_msg_a2(dev);
+	ret = get_msg_a2_reset(dev);
 	if (ret < 0) {
-		error("Error, cannot get message 0xa2: %d\n", ret);
+		error("Error, cannot perform reset: %d\n", ret);
 		goto out;
 	}
 
