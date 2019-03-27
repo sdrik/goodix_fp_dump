@@ -619,47 +619,17 @@ out:
 static int get_msg_20(libusb_device_handle *dev)
 {
 	int ret;
-	goodix_fp_out_packet pkt = {
-		.data = "\x20\x05\x00\x01\x06\xcf\x00\xaf\x00\x00\x00\x00\x00\x00\x00\x00" \
-			 "\xed\x00\x00\x00\x00\x00\x00\x00\x88\xba\x79\x81\xfb\x7f\x00\x00" \
-			 "\x08\xf1\xdf\x52\x74\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" \
-			 "\x00\x00\x00\x00\x00\x00\x00\x00\x20\x89\xac\x47\xd0\x01\x00\x00"
-	};
-	goodix_fp_in_packet reply = {
-		.data = { 0 }
-	};
+	uint8_t request[4] = "\x01\x06\xcf\x00";
 	uint8_t image[14656] = { 0 };
+	uint16_t image_size = 0;
 
-	trace_out_packet(&pkt);
-
-	ret = send_data(dev, pkt.data, sizeof(pkt.data));
+	ret = send_packet_full(dev, 0x20,
+			       request, sizeof(request),
+			       image, &image_size, false);
 	if (ret < 0)
 		goto out;
 
-	ret = read_data(dev, reply.data, sizeof(reply.data));
-	if (ret < 0)
-		goto out;
-
-	trace_in_packet(&reply);
-
-	if (reply.fields.type != GOODIX_FP_PACKET_TYPE_REPLY) {
-		error("Invalid reply to packet 0x20\n");
-		return -1;
-	}
-
-	ret = read_data(dev, reply.data, sizeof(reply.data));
-	if (ret < 0)
-		goto out;
-
-	trace_in_packet(&reply);
-
-	if (reply.fields.type != 0x20) {
-		error("Invalid reply to packet 0x20\n");
-		return -1;
-	}
-
-	payload_memcpy(image, reply.fields.payload, reply.fields.payload_size - 1);
-	trace_dump_buffer_to_file("payload_image.bin", image, reply.fields.payload_size - 1);
+	trace_dump_buffer_to_file("payload_image.bin", image, image_size);
 
 out:
 	return ret;
