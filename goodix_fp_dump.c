@@ -424,60 +424,28 @@ out:
 static int get_msg_e4_psk(libusb_device_handle *dev)
 {
 	int ret;
-	goodix_fp_out_packet pkt1 = {
-		.data = "\xe4\x05\x00\x01\xb0\x00\x00\x10\x00\x00\x00\x00\x00\x00\x00\x00" \
-			 "\xed\x00\x00\x00\x00\x00\x00\x00\x88\xba\x33\x0a\xf9\x7f\x00\x00" \
-			 "\xa8\xec\xb7\x53\x15\x00\x00\x00\x60\x74\x35\x0a\xf9\x7f\x00\x00" \
-			 "\x00\x00\x00\x00\x00\x00\x00\x00\x40\x27\x7f\x21\x91\x01\x00\x00"
-	};
-
-	goodix_fp_out_packet pkt2 = {
-		.data = "\xe4\x05\x00\x03\xb0\x00\x00\x0e\x00\x00\x00\x00\x00\x00\x00\x00" \
-			 "\xed\x00\x00\x00\x00\x00\x00\x00\x88\xba\x33\x0a\xf9\x7f\x00\x00" \
-			 "\xa8\xec\xb7\x53\x15\x00\x00\x00\x60\x74\x35\x0a\xf9\x7f\x00\x00" \
-			 "\x00\x00\x00\x00\x00\x00\x00\x00\x40\x27\x7f\x21\x91\x01\x00\x00"
-	};
-	goodix_fp_in_packet reply = {
-		.data = { 0 }
-	};
+	uint8_t request_psk[4] = "\x01\xb0\x00\x00";
+	uint8_t request_hash[4] = "\x03\xb0\x00\x00";
 	uint8_t psk[601] = { 0 };
+	uint16_t psk_size;
 	uint8_t hash[41] = { 0 };
+	uint16_t hash_size;
 
-	ret = send_data(dev, pkt1.data, sizeof(pkt1.data));
+	ret = send_packet(dev, GOODIX_FP_PACKET_TYPE_PSK,
+			  request_psk, sizeof(request_psk),
+			  psk, &psk_size);
 	if (ret < 0)
 		goto out;
-
-	ret = read_data(dev, reply.data, sizeof(reply.data));
-	if (ret < 0)
-		goto out;
-
-	trace_in_packet(&reply);
-
-	if (reply.fields.type != GOODIX_FP_PACKET_TYPE_REPLY) {
-		error("Invalid reply to packet 0xe4\n");
-		return -1;
-	}
-
-	ret = read_data(dev, reply.data, sizeof(reply.data));
-	if (ret < 0)
-		goto out;
-
-	trace_in_packet(&reply);
-
-	if (reply.fields.type != GOODIX_FP_PACKET_TYPE_PSK) {
-		error("Invalid reply to packet 0xe4\n");
-		return -1;
-	}
 
 	/*
-	 * The PSK payload contains one leading byte representing an error
+	 * The PSK response contains one leading byte representing an error
 	 * code, followed by Type-Length-Value data.
 	 *
 	 * The TLV structure is as follows.
 	 *
 	 * The Type field is uint32_t (little-endian):
 	 *   - 0x0000b001 means PSK
-	 *   - 0x0000b003 mean HASH
+	 *   - 0x0000b003 means HASH
 	 *
 	 * The Length field is uint32_t (little-endian):
 	 *   - 0x00000250 for the PSK
@@ -489,39 +457,17 @@ static int get_msg_e4_psk(libusb_device_handle *dev)
 	 *   - for the HASH it should be 32 bytes representing a sha256 hash
 	 *     of something from the PSK, after unsealing the data
 	 */
-	payload_memcpy(psk, reply.fields.payload, reply.fields.payload_size - 1);
-	trace_dump_buffer("PSK:", psk, sizeof(psk));
-	trace_dump_buffer_to_file("payload_psk.bin", psk, sizeof(psk));
+	trace_dump_buffer("PSK:", psk, psk_size);
+	trace_dump_buffer_to_file("payload_psk.bin", psk, psk_size);
 
-	ret = send_data(dev, pkt2.data, sizeof(pkt2.data));
+	ret = send_packet(dev, GOODIX_FP_PACKET_TYPE_PSK,
+			  request_hash, sizeof(request_hash),
+			  hash, &hash_size);
 	if (ret < 0)
 		goto out;
 
-	ret = read_data(dev, reply.data, sizeof(reply.data));
-	if (ret < 0)
-		goto out;
-
-	trace_in_packet(&reply);
-
-	if (reply.fields.type != GOODIX_FP_PACKET_TYPE_REPLY) {
-		error("Invalid reply to packet 0xe4\n");
-		return -1;
-	}
-
-	ret = read_data(dev, reply.data, sizeof(reply.data));
-	if (ret < 0)
-		goto out;
-
-	trace_in_packet(&reply);
-
-	if (reply.fields.type != GOODIX_FP_PACKET_TYPE_PSK) {
-		error("Invalid reply to packet 0xe4\n");
-		return -1;
-	}
-
-	memcpy(hash, reply.fields.payload, reply.fields.payload_size - 1);
-	trace_dump_buffer("HASH:", hash, sizeof(hash));
-	trace_dump_buffer_to_file("payload_hash.bin", hash, sizeof(hash));
+	trace_dump_buffer("HASH:", hash, hash_size);
+	trace_dump_buffer_to_file("payload_hash.bin", hash, hash_size);
 
 out:
 	return ret;
