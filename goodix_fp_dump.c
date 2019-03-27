@@ -408,47 +408,15 @@ out:
 static int get_msg_a6_otp(libusb_device_handle *dev)
 {
 	int ret;
-	goodix_fp_out_packet pkt = {
-		.data  = "\xa6\x03\x00\x00\x00\x01\x00\x00\x3d\xe9\x6d\x0f\xf9\x7f\x00\x00" \
-			  "\xed\x00\x00\x00\x00\x00\x00\x00\x88\xba\x33\x0a\xf9\x7f\x00\x00" \
-			  "\x88\xf9\xb7\x53\x15\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" \
-			  "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
-	};
-	goodix_fp_in_packet reply = {
-		.data = { 0 }
-	};
 	uint8_t otp[32];
+	uint16_t otp_size;
 
-	ret = send_data(dev, pkt.data, sizeof(pkt.data));
+	ret = send_packet_simple(dev, GOODIX_FP_PACKET_TYPE_OTP,
+				 (uint8_t *)otp, &otp_size);
 	if (ret < 0)
 		goto out;
-
-	ret = read_data(dev, reply.data, sizeof(reply.data));
-	if (ret < 0)
-		goto out;
-
-	trace_in_packet(&reply);
-
-	if (reply.fields.type != GOODIX_FP_PACKET_TYPE_REPLY) {
-		error("Invalid reply to packet 0xa6\n");
-		return -1;
-	}
-
-	ret = read_data(dev, reply.data, sizeof(reply.data));
-	if (ret < 0)
-		goto out;
-
-	trace_in_packet(&reply);
-
-	if (reply.fields.type != GOODIX_FP_PACKET_TYPE_OTP) {
-		error("Invalid reply to packet 0xa6\n");
-		return -1;
-	}
-
-	memcpy(otp, reply.fields.payload, reply.fields.payload_size - 1);
-
-	trace_dump_buffer("OTP:", otp, sizeof(otp));
-	trace_dump_buffer_to_file("payload_otp.bin", otp, sizeof(otp));
+	trace_dump_buffer("OTP:", otp, otp_size);
+	trace_dump_buffer_to_file("payload_otp.bin", otp, otp_size);
 out:
 	return ret;
 }
