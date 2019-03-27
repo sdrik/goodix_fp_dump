@@ -371,7 +371,6 @@ static int get_msg_a8_firmware_version(libusb_device_handle *dev)
 	char firmware_version[64] = "";
 	uint16_t string_len;
 
-
 	ret = send_packet_simple(dev, GOODIX_FP_PACKET_TYPE_FIRMWARE_VERSION,
 				 (uint8_t *)firmware_version, &string_len);
 	if (ret < 0)
