@@ -326,7 +326,8 @@ out:
 
 }
 
-static int send_simple_packet(libusb_device_handle *dev,
+/* Simple packets are those without a particular request buffer. */
+static int send_packet_simple(libusb_device_handle *dev,
 			      goodix_fp_packet_type packet_type,
 			      uint8_t *response,  uint16_t *response_size)
 {
@@ -342,7 +343,7 @@ static int get_msg_a8_firmware_version(libusb_device_handle *dev)
 	uint16_t string_len;
 
 
-	ret = send_simple_packet(dev, GOODIX_FP_PACKET_TYPE_FIRMWARE_VERSION,
+	ret = send_packet_simple(dev, GOODIX_FP_PACKET_TYPE_FIRMWARE_VERSION,
 				 (uint8_t *)firmware_version, &string_len);
 	if (ret < 0)
 		goto out;
