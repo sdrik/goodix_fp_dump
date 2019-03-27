@@ -61,6 +61,7 @@ typedef enum {
 	GOODIX_FP_PACKET_TYPE_REPLY = 0xb0,
 	GOODIX_FP_PACKET_TYPE_FIRMWARE_VERSION = 0xa8,
 	GOODIX_FP_PACKET_TYPE_OTP = 0xa6,
+	GOODIX_FP_PACKET_TYPE_HANDSHAKE = 0xd2,
 	GOODIX_FP_PACKET_TYPE_PSK = 0xe4,
 } goodix_fp_packet_type;
 
@@ -586,14 +587,16 @@ out:
 }
 
 /* some negotiation happens with packet d2 */
-static int get_msg_d2(libusb_device_handle *dev)
+static int get_msg_d2_handshake(libusb_device_handle *dev)
 {
 	int ret;
 	unsigned int i;
-	uint8_t client_hello[32 + 8] = "\x01\xff\x00\x00\x28\x00\x00\x00";
-	uint8_t server_reply[64 + 8] = { 0 } ;
-	uint16_t server_reply_size = 0;
-	uint8_t client_handshake[32 + 8 + 4] = "\x03\xff\x00\x00\x2c\x00\x00\x00";
+	uint8_t client_hello[8 + 32] = "\x01\xff\x00\x00\x28\x00\x00\x00";
+	uint8_t server_identity[8 + 64] = { 0 } ;
+	uint16_t server_identity_size = 0;
+	uint8_t client_reply[8 + 32 + 4] = "\x03\xff\x00\x00\x2c\x00\x00\x00";
+	uint8_t server_done[8 + 4] = { 0 };
+	uint16_t server_done_size = 0;
 
 	/* Use a constant secret for now */
 	for (i = 0; i < 32; i++)
@@ -601,29 +604,34 @@ static int get_msg_d2(libusb_device_handle *dev)
 
 	trace_dump_buffer_to_file("client_random.bin", client_hello + 8, 32);
 
-	ret = send_packet(dev, 0xd2, client_hello, sizeof(client_hello), server_reply, &server_reply_size);
+	ret = send_packet(dev,
+			  GOODIX_FP_PACKET_TYPE_HANDSHAKE,
+			  client_hello, sizeof(client_hello),
+			  server_identity, &server_identity_size);
 	if (ret < 0)
 		goto out;
 
-	/*
-	 * It looks like packet 2 content must not be constant, it depends on
-	 * some earlier value or from the reply to the first packet
-	 */
+	trace_dump_buffer_to_file("server_random1.bin", server_identity + 8, 32);
+	trace_dump_buffer_to_file("server_random2.bin", server_identity + 8 + 32, 32);
 
-	trace_dump_buffer_to_file("server_random1.bin", server_reply + 8, 32);
-	trace_dump_buffer_to_file("server_random2.bin", server_reply + 8 + 32, 32);
+	trace_dump_buffer("server_identity:", server_identity, server_identity_size);
 
-	trace_dump_buffer("server_reply:", server_reply, sizeof(server_reply));
+	/* Client reply is not constant, it depends on the server identity.  */
 
 	/* copy the server key into the reply packet */
-	memcpy(client_handshake + 8, server_reply + 8 + 32, 32);
+	memcpy(client_reply + 8, server_identity + 8 + 32, 32);
 
 	/* add some constant bytes */
-	memcpy(client_handshake + 8 + 32, "\xee\xee\xee\xee", 4);
+	memcpy(client_reply + 8 + 32, "\xee\xee\xee\xee", 4);
 
-	ret = send_packet(dev, 0xd2, client_handshake, sizeof(client_handshake), NULL, NULL);
+	ret = send_packet(dev,
+			  GOODIX_FP_PACKET_TYPE_HANDSHAKE,
+			  client_reply, sizeof(client_reply),
+			  server_done, &server_done_size);
 	if (ret < 0)
 		goto out;
+
+	trace_dump_buffer("server_done:", server_done, server_done_size);
 
 	/* If we pass this point negotiation succeeded */
 	trace("Hurrah!\n");
@@ -878,9 +886,9 @@ static int init(libusb_device_handle *dev)
 		goto out;
 	}
 
-	ret = get_msg_d2(dev);
+	ret = get_msg_d2_handshake(dev);
 	if (ret < 0) {
-		error("Error, cannot get message 0xd2: %d\n", ret);
+		error("Error, cannot perform handshake: %d\n", ret);
 		goto out;
 	}
 
