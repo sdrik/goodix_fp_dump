@@ -942,6 +942,11 @@ int main(void)
 		goto out_libusb_exit;
 	}
 
+#if 0
+	/* in case the device starts to act up */
+	libusb_reset_device(dev);
+#endif
+
 	int current_configuration = -1;
 	ret = libusb_get_configuration(dev, &current_configuration);
 	if (ret < 0) {
