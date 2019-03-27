@@ -222,7 +222,7 @@ static unsigned int send_multi_packet(libusb_device_handle *dev,
 	return -1;
 }
 
-static int send_packet(libusb_device_handle *dev,
+static int send_packet_full(libusb_device_handle *dev,
 		       goodix_fp_packet_type packet_type,
 		       uint8_t *request, uint16_t request_size,
 		       uint8_t *response, uint16_t *response_size,
@@ -326,6 +326,15 @@ out:
 
 }
 
+/* Usually packets do not need to change the fixed_checksum parameter. */
+static int send_packet(libusb_device_handle *dev,
+		       goodix_fp_packet_type packet_type,
+		       uint8_t *request, uint16_t request_size,
+		       uint8_t *response, uint16_t *response_size)
+{
+	return send_packet_full(dev, packet_type, request, request_size, response, response_size, false);
+}
+
 /* Simple packets are those without a particular request buffer. */
 static int send_packet_simple(libusb_device_handle *dev,
 			      goodix_fp_packet_type packet_type,
@@ -333,7 +342,7 @@ static int send_packet_simple(libusb_device_handle *dev,
 {
 	uint8_t payload[2] = { 0 };
 
-	return send_packet(dev, packet_type, payload, 2, response, response_size, false);
+	return send_packet(dev, packet_type, payload, 2, response, response_size);
 }
 
 static int get_msg_a8_firmware_version(libusb_device_handle *dev)
@@ -575,7 +584,7 @@ static int get_msg_d2(libusb_device_handle *dev)
 
 	trace_dump_buffer_to_file("client_random.bin", client_hello + 8, 32);
 
-	ret = send_packet(dev, 0xd2, client_hello, sizeof(client_hello), server_reply, &server_reply_size, false);
+	ret = send_packet(dev, 0xd2, client_hello, sizeof(client_hello), server_reply, &server_reply_size);
 	if (ret < 0)
 		goto out;
 
@@ -595,7 +604,7 @@ static int get_msg_d2(libusb_device_handle *dev)
 	/* add some constant bytes */
 	memcpy(client_handshake + 8 + 32, "\xee\xee\xee\xee", 4);
 
-	ret = send_packet(dev, 0xd2, client_handshake, sizeof(client_handshake), NULL, NULL, false);
+	ret = send_packet(dev, 0xd2, client_handshake, sizeof(client_handshake), NULL, NULL);
 	if (ret < 0)
 		goto out;
 
