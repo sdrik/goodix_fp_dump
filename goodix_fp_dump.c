@@ -607,47 +607,20 @@ out:
 static int get_msg_36(libusb_device_handle *dev)
 {
 	int ret;
-	goodix_fp_out_packet pkt = {
-		.data = "\x36\x1b\x00\x0d\x01\x97\x97\xa1\xa1\x9b\x9b\x92\x92\x96\x96\xa4" \
-			 "\xa4\x9d\x9d\x95\x95\x94\x94\xa1\xa1\x9c\x9c\x8e\x8e\xeb\x00\x00" \
-			 "\x48\xf8\xb7\x53\x15\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" \
-			 "\x00\x00\x00\x00\x00\x00\x00\x00\x30\x14\x77\x21\x91\x01\x00\x00"
-	};
-	goodix_fp_in_packet reply = {
-		.data = { 0 }
-	};
+	uint8_t request[26] = "\x0d\x01" \
+			       "\x97\x97\xa1\xa1\x9b\x9b\x92\x92\x96\x96\xa4\xa4" \
+			       "\x9d\x9d\x95\x95\x94\x94\xa1\xa1\x9c\x9c\x8e\x8e";
+	uint8_t response[32768] = { 0 };
+	uint16_t response_size = 0;
 
-	trace_out_packet(&pkt);
-
-	ret = send_data(dev, pkt.data, sizeof(pkt.data));
+	ret = send_packet(dev, 0x36, request, sizeof(request), response, &response_size);
 	if (ret < 0)
 		goto out;
 
-	ret = read_data(dev, reply.data, sizeof(reply.data));
-	if (ret < 0)
-		goto out;
-
-	trace_in_packet(&reply);
-
-	if (reply.fields.type != GOODIX_FP_PACKET_TYPE_REPLY) {
-		error("Invalid reply to packet 0x36\n");
-		return -1;
-	}
-
-	ret = read_data(dev, reply.data, sizeof(reply.data));
-	if (ret < 0)
-		goto out;
-
-	trace_in_packet(&reply);
-
-	if (reply.fields.type != 0x36) {
-		error("Invalid reply to packet 0x36\n");
-		return -1;
-	}
+	trace_dump_buffer("0x36 response: ", response, response_size);
 
 out:
 	return ret;
-
 }
 
 /* this is probably the message to get an image, together with 36 */
