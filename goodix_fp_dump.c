@@ -210,15 +210,6 @@ static uint8_t calc_checksum(uint8_t packet_type, uint8_t *payload, uint16_t pay
 	return (uint8_t)(0xaa - sum);
 }
 
-static bool verify_checksum(uint8_t packet_type, uint8_t *payload, uint16_t payload_size, uint8_t checksum)
-{
-	uint8_t sum;
-
-	sum = calc_checksum(packet_type, payload, payload_size);
-
-	return sum == checksum;
-}
-
 static unsigned int send_multi_packet(libusb_device_handle *dev,
 				      goodix_fp_packet_type packet_type,
 				      uint8_t *request, uint16_t request_size)
@@ -236,7 +227,7 @@ static int send_packet_full(libusb_device_handle *dev,
 		       goodix_fp_packet_type packet_type,
 		       uint8_t *request, uint16_t request_size,
 		       uint8_t *response, uint16_t *response_size,
-		       bool fixed_checksum)
+		       bool verify_data_checksum)
 {
 	goodix_fp_out_packet packet = {
 		.fields = {
@@ -251,7 +242,8 @@ static int send_packet_full(libusb_device_handle *dev,
 	};
 	int ret;
 	uint8_t checksum;
-	bool is_valid_checksum;
+	uint8_t response_checksum;
+	uint8_t expected_checksum;
 
 	/* If the request buffer fits into a single packet, send it */
 	if (request_size + 1 < 64 - 3) {
@@ -283,11 +275,12 @@ static int send_packet_full(libusb_device_handle *dev,
 		goto out;
 	}
 
-	is_valid_checksum = verify_checksum(reply.fields.type,
-					    reply.fields.payload,
-					    reply.fields.payload_size - 1,
-					    reply.fields.payload[reply.fields.payload_size - 1]);
-	if (!is_valid_checksum) {
+	response_checksum = reply.fields.payload[reply.fields.payload_size - 1];
+	expected_checksum = calc_checksum(reply.fields.type,
+					  reply.fields.payload,
+					  reply.fields.payload_size - 1);
+
+	if (response_checksum != expected_checksum) {
 		error("Invalid checksum for reply packet %02x\n", packet.fields.type);
 		ret = -1;
 		goto out;
@@ -304,7 +297,6 @@ static int send_packet_full(libusb_device_handle *dev,
 
 	if (response) {
 		int extra_packets;
-		uint8_t response_checksum;
 
 		ret = read_data(dev, reply.data, sizeof(reply.data));
 		if (ret < 0)
@@ -320,17 +312,17 @@ static int send_packet_full(libusb_device_handle *dev,
 
 		extra_packets = payload_memcpy(response, reply.fields.payload, reply.fields.payload_size - 1);
 
-		if (fixed_checksum) {
-			response_checksum = 0x88;
+		response_checksum = reply.fields.payload[reply.fields.payload_size - 1 + extra_packets];
+
+		if (verify_data_checksum) {
+			expected_checksum = calc_checksum(reply.fields.type,
+							  response,
+							  reply.fields.payload_size - 1);
 		} else {
-			response_checksum = reply.fields.payload[reply.fields.payload_size - 1 + extra_packets];
+			expected_checksum = 0x88;
 		}
 
-		is_valid_checksum = verify_checksum(reply.fields.type,
-						    response,
-						    reply.fields.payload_size - 1,
-						    response_checksum);
-		if (!is_valid_checksum) {
+		if (response_checksum != expected_checksum) {
 			error("Invalid checksum for input packet %02x\n", reply.fields.type);
 			ret = -1;
 			goto out;
@@ -352,7 +344,7 @@ static int send_packet(libusb_device_handle *dev,
 		       uint8_t *request, uint16_t request_size,
 		       uint8_t *response, uint16_t *response_size)
 {
-	return send_packet_full(dev, packet_type, request, request_size, response, response_size, false);
+	return send_packet_full(dev, packet_type, request, request_size, response, response_size, true);
 }
 
 /* Simple packets are those without a particular request buffer. */
