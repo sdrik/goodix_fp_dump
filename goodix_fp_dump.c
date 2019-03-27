@@ -66,12 +66,14 @@ typedef enum {
 	GOODIX_FP_PACKET_TYPE_PSK = 0xe4,
 } goodix_fp_packet_type;
 
-static void trace_dump_buffer(const char *message, uint8_t *buffer, unsigned int len)
+static void trace_dump_buffer(const char *message, uint8_t *buffer, int len)
 {
-	unsigned int i;
+	int i;
 
-	if (buffer == NULL || len == 0)
+	if (buffer == NULL || len <= 0) {
+		trace("Invalid or empty buffer\n");
 		return;
+	}
 
 	trace("\n");
 	if (message)
@@ -83,9 +85,12 @@ static void trace_dump_buffer(const char *message, uint8_t *buffer, unsigned int
 	trace("\n");
 }
 
-static void trace_dump_buffer_to_file(const char *filename, uint8_t *buffer, unsigned int len)
+static void trace_dump_buffer_to_file(const char *filename, uint8_t *buffer, int len)
 {
 	FILE *fp;
+
+	if (buffer == NULL || len <= 0)
+		return;
 
 	fp = fopen(filename, "wb");
 	if (fp == NULL) {
