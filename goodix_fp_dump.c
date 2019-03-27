@@ -23,6 +23,7 @@
 
 #define trace(...) fprintf(stderr, __VA_ARGS__)
 #define error(...) fprintf(stderr, __VA_ARGS__)
+#define warning(...) fprintf(stderr, __VA_ARGS__)
 
 #define MIN(a,b) (((a)<(b))?(a):(b))
 
@@ -47,6 +48,13 @@ typedef union {
 		uint16_t payload_size;
 		uint8_t payload[32765];
 	} fields;
+	struct __attribute__((packed)) {
+		uint8_t type;
+		uint16_t payload_size;
+		uint8_t reply_to;
+		uint8_t status;
+		uint8_t checksum;
+	} reply_packet;
 } goodix_fp_in_packet;
 
 typedef enum {
@@ -281,6 +289,15 @@ static int send_packet_full(libusb_device_handle *dev,
 		ret = -1;
 		goto out;
 	}
+
+	if (reply.reply_packet.reply_to != packet.fields.type) {
+		error("Unexpected reply to packet %02x (got %02x)\n", packet.fields.type, reply.reply_packet.reply_to);
+		ret = -1;
+		goto out;
+	}
+
+	if (reply.reply_packet.status != 0x1)
+		warning("Unexpected status for packet %02x (expected 0x01, got 0x%02x)\n", packet.fields.type, reply.reply_packet.status);
 
 	if (response) {
 		int extra_packets;
