@@ -527,8 +527,6 @@ out:
 	return ret;
 }
 
-#if 0
-
 static int get_msg_90(libusb_device_handle *dev)
 {
 	int ret;
@@ -702,6 +700,8 @@ out:
 	return ret;
 }
 
+#if 0
+
 /* maybe some shutdown message */
 static int get_msg_60(libusb_device_handle *dev)
 {}
@@ -779,7 +779,6 @@ static int init(libusb_device_handle *dev)
 		goto out;
 	}
 
-#if 0
 	ret = get_msg_90(dev);
 	if (ret < 0) {
 		error("Error, cannot get message 0x90: %d\n", ret);
@@ -797,7 +796,6 @@ static int init(libusb_device_handle *dev)
 		error("Error, cannot get message 0x20: %d\n", ret);
 		goto out;
 	}
-#endif
 
 out:
 	return ret;
