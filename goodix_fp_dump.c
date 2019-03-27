@@ -240,6 +240,7 @@ static int send_packet_full(libusb_device_handle *dev,
 	goodix_fp_out_packet packet = {
 		.fields = {
 			.type = packet_type,
+			/* the extra byte is for the checkum */
 			.payload_size = request_size + 1,
 			.payload = { 0 }
 		}
