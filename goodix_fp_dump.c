@@ -392,23 +392,15 @@ static int get_msg_a2_reset(libusb_device_handle *dev)
 static int get_msg_82(libusb_device_handle *dev)
 {
 	int ret;
-	uint8_t buffer[32768] = { 0 };
-	uint8_t pkt[64] = "\x82\x06\x00\x00\x00\x00\x04\x00\x1e\x00\x00\x00\x00\x00\x00\x00" \
-			   "\xed\x00\x00\x00\x00\x00\x00\x00\x88\xba\x33\x0a\xf9\x7f\x00\x00" \
-			   "\xe8\xf9\xb7\x53\x15\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" \
-			   "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00";
+	uint8_t payload[5] = {0x00, 0x00, 0x00, 0x04, 0x00 };
+	uint8_t response[32768] = { 0 };
+	uint16_t response_size = 0;
 
-	ret = send_data(dev, pkt, 64);
+	ret = send_packet(dev, 0x82, payload, 5, response, &response_size);
 	if (ret < 0)
 		goto out;
 
-	ret = read_data(dev, buffer, sizeof(buffer));
-	if (ret < 0)
-		goto out;
-
-	ret = read_data(dev, buffer, sizeof(buffer));
-	if (ret < 0)
-		goto out;
+	trace_dump_buffer("0x82 response: ", response, response_size);
 
 out:
 	return ret;
