@@ -224,10 +224,10 @@ static unsigned int send_multi_packet(libusb_device_handle *dev,
 }
 
 static int send_packet_full(libusb_device_handle *dev,
-		       goodix_fp_packet_type packet_type,
-		       uint8_t *request, uint16_t request_size,
-		       uint8_t *response, uint16_t *response_size,
-		       bool verify_data_checksum)
+			    goodix_fp_packet_type packet_type,
+			    uint8_t *request, uint16_t request_size,
+			    uint8_t *response, uint16_t *response_size,
+			    bool verify_data_checksum)
 {
 	goodix_fp_out_packet packet = {
 		.fields = {
