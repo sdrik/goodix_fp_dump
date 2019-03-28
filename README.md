@@ -15,24 +15,57 @@ ACTION=="add", SUBSYSTEM=="usb", ATTRS{idVendor}=="27c6", ATTRS{idProduct}=="538
 ```
 # Goodix USB Fingerprint scanner protocol
 
-The USB protocol seems to be quite simple at the packet level:
+The USB protocol seems to be quite simple at the packet level.
 
-1. The host sends a command packet with a one-byte command ID.
-2. The device replies with a generic reply packet (ID 0xb0) followed by a length
-   field (usually with the value of 3) and a short payload containing the ID of
-   the packet to which this is a reply.
-3. For some commands there are one or further reply packets, starting with the
-   ID of the command, followed by the payload length, and the payload data.
+The general format of a packet is:
 
-However at some point the data gets encrypted, and it is not clear yet what all the different packets mean and how to encryption is performed.
+```
+struct {
+    uint8_t type;
+    uint16_t payload_size; /* little-endian */
+    uint8_t payload[]; /* conatains a checksum as last byte */
+} goodif_fp_packet;
+```
 
-## General packet structure
+The communication takes place as follows:
+
+1. The host sends a command packet with a type `ID` (an even number), and
+   possibly some associated data and checksum.
+   
+   If the payload data and checksum do not fit in one 64 bytes packet then
+   multiple packets are sent. Packets following the first one have the type
+   equal to `ID + 1` to signal that they are **continuation** packets.
+
+   Each output request is 64 bytes.
+
+2. The device replies with a reply packet: `type: 0xb0, payload_size: 3` the
+   payload contains the ID of the packet to which this is a reply and a status
+   indicator, finally followed by a one-byte checksum.
+   
+   All input requests are 32768 bytes, but the number of actually transferred
+   bytes depends on the packet type.
+
+3. For some commands there is a response packet which starts with the ID of the
+   command, followed by the payload size, and the payload data, and the
+   checksum.
+   
+   If the payload data does not fit into 64 bytes, the data in the response
+   packet would contain continuation packets.
+
+   Note that the value of `payload_size` is the size of the useful data in
+   response to a command plus one checksum byte, it does not include header
+   fields and continuation bytes.
+
+Image data seems to be encrypted.
+
+## Packet structure
 
 Packets are sent with bulk-out requests of 64 bytes on endpoint 0x03 of interface 1.
 
 Replies are read with bulk-in requests of 32768 bytes on endpoint 0x81 of interface 1.
 
-The [http://kaitai.io/](Kaitai struct) description of a packet is:
+The [http://kaitai.io/](Kaitai struct) description of some single-packet
+commands follows:
 
 ```
 meta:
@@ -89,10 +122,8 @@ enums:
 
 ### Packet 0xb0
 
-This is the generic reply, it is sent in response to every packet and precedes the actual reply packet if there is any.
+This is the generic reply, it is sent in response to every packet and precedes the actual response packet if there is any.
 
+### Packet 0xa8
 
-### Type 0xa8
-
-Seems to be related to the sensor identification: it contains a string which described the sensor, maybe a numeric ID too.
-
+This returns the firmware version.
