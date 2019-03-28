@@ -25,8 +25,6 @@
 #define error(...) fprintf(stderr, __VA_ARGS__)
 #define warning(...) fprintf(stderr, __VA_ARGS__)
 
-#define MIN(a,b) (((a)<(b))?(a):(b))
-
 /*
  * The device expects umeric values as little-endian.
  *
@@ -162,43 +160,53 @@ static int read_data(libusb_device_handle *dev, uint8_t *buffer, unsigned int le
  * Long payloads have some bytes on the 64 bytes boundary of the packet which
  * have to be skipped when copying data.
  */
-static unsigned int payload_memcpy(uint8_t *dst, uint8_t *src, size_t n)
+static int extract_payload(goodix_fp_in_packet packet, uint8_t *response, uint8_t *checksum)
 {
-	unsigned int src_offset;
-	unsigned int dst_offset;
+	uint8_t *src;
+	uint8_t *dst;
 	int chunk_size;
 	int remaining;
-	unsigned int extra_packets;
+	unsigned int continuation_packets;
 
-	src_offset = 0;
-	dst_offset = 0;
-	remaining = n;
-	extra_packets = 0;
+	if (packet.fields.payload_size == 0) {
+		error("Invalid payload size, it cannot be 0\n");
+		return -1;
+	}
 
-	/* skip the header and copy the first chunk of data */
-	chunk_size = MIN(n, 64 - 3);
+	/* first chunk */
+	continuation_packets = 0;
+	src = packet.fields.payload;
+	dst = response;
+	remaining = packet.fields.payload_size - 1; /* skip checksum byte */
+
+	/* the first chunk can also be the last one */
+	if (remaining < 64 - 3)
+		goto last_chunk;
+
+	/* first of multiple chunks */
+	chunk_size = 64 - 3;
 	memcpy(dst, src, chunk_size);
-	src_offset += chunk_size + 1; /* skip the next continuation byte */
-	dst_offset += chunk_size;
+	src += chunk_size + 1; /* skip the next continuation byte */
+	dst += chunk_size;
 	remaining -= chunk_size;
 
 	/* copy most of the data, skipping the continuation bytes */
 	chunk_size = 64 - 1;
 	while (remaining >= chunk_size) {
-		memcpy(dst + dst_offset, src + src_offset, chunk_size);
-		src_offset += chunk_size + 1; /* skip the next continuation byte */
-		dst_offset += chunk_size;
+		continuation_packets++;
+		memcpy(dst, src, chunk_size);
+		src += chunk_size + 1; /* skip the next continuation byte */
+		dst += chunk_size;
 		remaining -= chunk_size;
-		extra_packets++;
 	}
 
-	/* copy the last chunk if there is one */
-	if (remaining > 0) {
-		memcpy(dst + dst_offset, src + src_offset, remaining);
-		extra_packets++;
-	}
+	/* copy the last chunk */
+	continuation_packets++;
+last_chunk:
+	memcpy(dst, src, remaining);
 
-	return extra_packets;
+	*checksum = packet.fields.payload[packet.fields.payload_size - 1 + continuation_packets];
+	return 0;
 }
 
 static uint8_t calc_checksum(uint8_t packet_type, uint8_t *payload, uint16_t payload_size)
@@ -301,8 +309,6 @@ static int send_packet_full(libusb_device_handle *dev,
 		warning("Unexpected status for packet %02x (expected 0x01, got 0x%02x)\n", packet.fields.type, reply.reply_packet.status);
 
 	if (response) {
-		int extra_packets;
-
 		ret = read_data(dev, reply.data, sizeof(reply.data));
 		if (ret < 0)
 			goto out;
@@ -315,9 +321,10 @@ static int send_packet_full(libusb_device_handle *dev,
 			goto out;
 		}
 
-		extra_packets = payload_memcpy(response, reply.fields.payload, reply.fields.payload_size - 1);
-
-		response_checksum = reply.fields.payload[reply.fields.payload_size - 1 + extra_packets];
+		/* extract the payload, it may contain continuation bytes */
+		ret = extract_payload(reply, response, &response_checksum);
+		if (ret < 0)
+			goto out;
 
 		if (verify_data_checksum) {
 			expected_checksum = calc_checksum(reply.fields.type,
