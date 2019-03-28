@@ -64,7 +64,7 @@ Packets are sent with bulk-out requests of 64 bytes on endpoint 0x03 of interfac
 
 Replies are read with bulk-in requests of 32768 bytes on endpoint 0x81 of interface 1.
 
-The [http://kaitai.io/](Kaitai struct) description of some single-packet
+The [Kaitai struct](http://kaitai.io/) description of some single-packet
 commands follows:
 
 ```
@@ -78,44 +78,37 @@ seq:
 types:
   header:
     seq:
-      - id: packet_id
+      - id: type
         type: u1
         enum: packet_type
+      - id: payload_size
+        type: u2
       - id: payload
+        size: payload_size - 1
         type:
-          switch-on: packet_id
+          switch-on: type
           cases:
             'packet_type::reply': payload_reply
             'packet_type::firmware_version': payload_firmware_version
-            'packet_type::otp': payload_otp
+      - id: checksum
+        type: u1
   payload_reply:
     seq:
-      - id: payload_size
-        type: u2
       - id: reply_to
         type: u1
         enum: packet_type
-      - id: unknown
-        size: payload_size - 1
+      - id: status
+        type: u1
   payload_firmware_version:
     seq:
-      - id: payload_size
-        type: u2
       - id: firmware_version
         type: str
         encoding: ascii
-        size: payload_size - 1
-  payload_otp:
-    seq:
-      - id: payload_size
-        type: u2
-      - id: otp
-        size: payload_size - 1
+        terminator: 0
 enums:
   packet_type:
     0xb0: reply
     0xa8: firmware_version
-    0xa6: otp
 ```
 
 ## Packet types
