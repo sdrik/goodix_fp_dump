@@ -124,7 +124,7 @@ static void trace_in_packet(goodix_fp_in_packet *packet)
 	trace("\n");
 }
 
-static int send_data(libusb_device_handle *dev, uint8_t *buffer, unsigned int len)
+static int send_data(libusb_device_handle *dev, uint8_t *buffer, int len)
 {
 	int ret;
 	int transferred;
@@ -133,7 +133,7 @@ static int send_data(libusb_device_handle *dev, uint8_t *buffer, unsigned int le
 
 	transferred = 0;
 	ret = libusb_bulk_transfer(dev, GOODIX_FP_OUT_EP, buffer, len, &transferred, 0);
-	if (ret != 0 || (unsigned int)transferred != len) {
+	if (ret != 0 || transferred != len) {
 		error("%s. Transferred: %d (expected %u)\n",
 		      libusb_error_name(ret), transferred, len);
 		return ret;
@@ -142,9 +142,8 @@ static int send_data(libusb_device_handle *dev, uint8_t *buffer, unsigned int le
 	return 0;
 }
 
-static int read_data(libusb_device_handle *dev, uint8_t *buffer, unsigned int len)
+static int read_data(libusb_device_handle *dev, uint8_t *buffer, int len)
 {
-
 	int ret;
 	int transferred;
 
