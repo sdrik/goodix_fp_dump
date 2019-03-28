@@ -37,6 +37,10 @@ typedef union {
 		uint16_t payload_size;
 		uint8_t payload[61];
 	} fields;
+	struct {
+		uint8_t type;
+		uint8_t payload[63];
+	} continuation;
 } goodix_fp_out_packet;
 
 typedef union {
@@ -223,17 +227,78 @@ static uint8_t calc_checksum(uint8_t packet_type, uint8_t *payload, uint16_t pay
 	return (uint8_t)(0xaa - sum);
 }
 
-static unsigned int send_multi_packet(libusb_device_handle *dev,
-				      goodix_fp_packet_type packet_type,
-				      uint8_t *request, uint16_t request_size)
+static int send_payload(libusb_device_handle *dev,
+			goodix_fp_packet_type packet_type,
+			uint8_t *request, uint16_t request_size)
 {
-	(void) dev;
-	(void) packet_type;
-	(void) request;
-	(void) request_size;
+	int ret;
+	uint8_t *src;
+	uint8_t *dst;
+	int remaining;
+	int chunk_size;
+	uint8_t checksum;
+	goodix_fp_out_packet packet = {
+		.data = { 0 }
+	};
 
-	trace("multi packet requests not implemented yet\n");
-	return -1;
+	checksum = calc_checksum(packet_type, request, request_size);
+
+	/* first packet */
+	packet.fields.type = packet_type;
+	packet.fields.payload_size = request_size + 1; /* extra checkum byte */
+
+	src = request;
+	dst = packet.fields.payload;
+	remaining = request_size;
+
+	/* the first packet can also be the last one */
+	if (remaining < 64 - 3) {
+		packet.fields.payload[remaining] = checksum;
+		goto send_last_packet;
+	}
+
+	/* first of multiple packets */
+	chunk_size = 64 - 3;
+	memcpy(dst, src, chunk_size);
+
+	trace_out_packet(&packet);
+	ret = send_data(dev, packet.data, sizeof(packet.data));
+	if (ret < 0)
+		goto out;
+
+	remaining -= chunk_size;
+	src += chunk_size;
+
+	/* continuation packets */
+	packet.continuation.type = packet_type + 1;
+
+	dst = packet.continuation.payload;
+	chunk_size = 64 - 1;
+	while (remaining >= chunk_size) {
+		memcpy(dst, src, chunk_size);
+
+		trace_out_packet(&packet);
+		ret = send_data(dev, packet.data, sizeof(packet.data));
+		if (ret < 0)
+			goto out;
+
+		src += chunk_size;
+		remaining -= chunk_size;
+	}
+
+	/* last continuation packet */
+	packet.continuation.payload[remaining] = checksum;
+
+send_last_packet:
+	memcpy(dst, src, remaining);
+
+	trace_out_packet(&packet);
+	ret = send_data(dev, packet.data, sizeof(packet.data));
+	if (ret < 0)
+		goto out;
+
+out:
+	return ret;
 }
 
 static int send_packet_full(libusb_device_handle *dev,
@@ -254,27 +319,12 @@ static int send_packet_full(libusb_device_handle *dev,
 		.data = { 0 }
 	};
 	int ret;
-	uint8_t checksum;
 	uint8_t response_checksum;
 	uint8_t expected_checksum;
 
-	/* If the request buffer fits into a single packet, send it */
-	if (request_size + 1 < 64 - 3) {
-		memcpy(packet.fields.payload, request, request_size);
-
-		checksum = calc_checksum(packet_type, request, request_size);
-		packet.fields.payload[request_size] = checksum;
-
-		trace_out_packet(&packet);
-
-		ret = send_data(dev, packet.data, sizeof(packet.data));
-		if (ret < 0)
-			goto out;
-	} else {
-		ret = send_multi_packet(dev, packet_type, request, request_size);
-		if (ret < 0)
-			goto out;
-	}
+	ret = send_payload(dev, packet_type, request, request_size);
+	if (ret < 0)
+		goto out;
 
 	ret = read_data(dev, reply.data, sizeof(reply.data));
 	if (ret < 0)
