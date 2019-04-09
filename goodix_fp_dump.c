@@ -866,7 +866,11 @@ int main(void)
 		goto out;
 	}
 
+#if defined(LIBUSB_API_VERSION) && (LIBUSB_API_VERSION >= 0x01000106)
 	libusb_set_option(NULL, LIBUSB_OPTION_LOG_LEVEL, 3);
+#else
+	libusb_set_debug(NULL, 3);
+#endif
 
 	ret = usb_device_open(&dev);
 	if (ret < 0)
