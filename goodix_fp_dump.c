@@ -16,8 +16,6 @@
 #define GOODIX_FP_VID            0x27c6
 #define GOODIX_FP_PID            0x5385
 #define GOODIX_FP_CONFIGURATION  1
-#define GOODIX_FP_COMM_INTERFACE 0
-#define GOODIX_FP_DATA_INTERFACE 1
 #define GOODIX_FP_IN_EP          0x81
 #define GOODIX_FP_OUT_EP         0x03
 
@@ -757,16 +755,79 @@ out:
 	return ret;
 }
 
-static int claim_interface(libusb_device_handle *dev, int interface_number)
+static int usb_claim_interfaces(libusb_device_handle *dev, int configuration)
 {
-	int ret = libusb_claim_interface(dev, interface_number);
-	if (ret < 0) {
-		fprintf(stderr, "libusb_claim_interface failed: %s\n",
-			libusb_error_name(ret));
-		fprintf(stderr, "Cannot claim interface %d\n",
-			interface_number);
+	libusb_device *usb_device;
+	struct libusb_config_descriptor *config_desc;
+	int num_interfaces;
+	int ret;
+	int i;
+
+	usb_device = libusb_get_device(dev);
+	if (usb_device == NULL)
+		return -ENODEV;
+
+	ret = libusb_get_config_descriptor_by_value(usb_device, configuration, &config_desc);
+	if (ret < 0)
+		goto out;
+
+	num_interfaces = config_desc->bNumInterfaces;
+	libusb_free_config_descriptor(config_desc);
+
+	for (i = 0; i < num_interfaces; i++) {
+		ret = libusb_claim_interface(dev, i);
+		if (ret < 0) {
+			fprintf(stderr, "libusb_claim_interface failed: %s\n",
+				libusb_error_name(ret));
+			fprintf(stderr, "Cannot claim interface %d\n", i);
+			goto release_claimed_interfaces;
+		}
 	}
 
+	return 0;
+
+release_claimed_interfaces:
+	while (--i >= 0) {
+		int release_ret = libusb_release_interface(dev, i);
+		if (release_ret < 0) {
+			fprintf(stderr, "libusb_release_interface failed: %s\n",
+				libusb_error_name(release_ret));
+			fprintf(stderr, "Warning: could not release interface: %d\n", i);
+			/* move on and try releasing the remaining interfaces */
+		}
+	}
+
+out:
+	return ret;
+}
+
+static int usb_release_interfaces(libusb_device_handle *dev, int configuration)
+{
+	libusb_device *usb_device;
+	struct libusb_config_descriptor *config_desc;
+	int ret;
+	int i;
+
+	usb_device = libusb_get_device(dev);
+	if (usb_device == NULL)
+		return -ENODEV;
+
+	ret = libusb_get_config_descriptor_by_value(usb_device, configuration, &config_desc);
+	if (ret < 0)
+		goto out;
+
+	for (i = 0; i < config_desc->bNumInterfaces; i++) {
+		ret = libusb_release_interface(dev, i);
+		if (ret < 0) {
+			fprintf(stderr, "libusb_release_interface failed: %s\n",
+				libusb_error_name(ret));
+			fprintf(stderr, "Warning: could not release interface: %d\n", i);
+			/* move on and try releasing the remaining interfaces */
+		}
+	}
+
+	libusb_free_config_descriptor(config_desc);
+out:
 	return ret;
 }
 
@@ -807,14 +868,10 @@ static int usb_device_open(libusb_device_handle **dev)
 
 	libusb_set_auto_detach_kernel_driver(*dev, 1);
 
-	/* Claim both interfaces, the cdc_acm driver may be bound to them. */
-	ret = claim_interface(*dev, GOODIX_FP_COMM_INTERFACE);
+	/* Claim all interfaces, the cdc_acm driver may be bound to them. */
+	ret = usb_claim_interfaces(*dev, GOODIX_FP_CONFIGURATION);
 	if (ret < 0)
 		goto out_libusb_close;
-
-	ret = claim_interface(*dev, GOODIX_FP_DATA_INTERFACE);
-	if (ret < 0)
-		goto out_libusb_release_comm_interface;
 
 	/*
 	 * Checking that the configuration has not changed, as suggested in
@@ -825,22 +882,20 @@ static int usb_device_open(libusb_device_handle **dev)
 	if (ret < 0) {
 		fprintf(stderr, "libusb_get_configuration after claim failed: %s\n",
 			libusb_error_name(ret));
-		goto out_libusb_release_interfaces;
+		goto out_release_interfaces;
 	}
 
 	if (current_configuration != GOODIX_FP_CONFIGURATION) {
 		fprintf(stderr, "libusb configuration changed (expected: %d, current: %d)\n",
 			GOODIX_FP_CONFIGURATION, current_configuration);
 		ret = -EINVAL;
-		goto out_libusb_release_interfaces;
+		goto out_release_interfaces;
 	}
 
 	return 0;
 
-out_libusb_release_interfaces:
-	libusb_release_interface(*dev, GOODIX_FP_DATA_INTERFACE);
-out_libusb_release_comm_interface:
-	libusb_release_interface(*dev, GOODIX_FP_COMM_INTERFACE);
+out_release_interfaces:
+	usb_release_interfaces(*dev, GOODIX_FP_CONFIGURATION);
 out_libusb_close:
 	libusb_close(*dev);
 out:
@@ -849,8 +904,7 @@ out:
 
 static void usb_device_close(libusb_device_handle *dev)
 {
-	libusb_release_interface(dev, GOODIX_FP_DATA_INTERFACE);
-	libusb_release_interface(dev, GOODIX_FP_COMM_INTERFACE);
+	usb_release_interfaces(dev, GOODIX_FP_CONFIGURATION);
 	libusb_close(dev);
 }
 
