@@ -398,7 +398,7 @@ out:
 
 }
 
-/* Usually packets do not need to change the fixed_checksum parameter. */
+/* Usually packets do not need to change the verify_data_checksum parameter. */
 static int send_packet(libusb_device_handle *dev,
 		       goodix_fp_packet_type packet_type,
 		       uint8_t *request, uint16_t request_size,
