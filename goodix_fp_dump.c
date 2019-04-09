@@ -220,6 +220,82 @@ static int usb_read_data(libusb_device_handle *dev, uint8_t in_ep,
 	return transferred;
 }
 
+static int usb_claim_interfaces(libusb_device_handle *dev, int configuration)
+{
+	libusb_device *usb_device;
+	struct libusb_config_descriptor *config_desc;
+	int num_interfaces;
+	int ret;
+	int i;
+
+	usb_device = libusb_get_device(dev);
+	if (usb_device == NULL)
+		return -ENODEV;
+
+	ret = libusb_get_config_descriptor_by_value(usb_device, configuration, &config_desc);
+	if (ret < 0)
+		goto out;
+
+	num_interfaces = config_desc->bNumInterfaces;
+	libusb_free_config_descriptor(config_desc);
+
+	for (i = 0; i < num_interfaces; i++) {
+		ret = libusb_claim_interface(dev, i);
+		if (ret < 0) {
+			fprintf(stderr, "libusb_claim_interface failed: %s\n",
+				libusb_error_name(ret));
+			fprintf(stderr, "Cannot claim interface %d\n", i);
+			goto release_claimed_interfaces;
+		}
+	}
+
+	return 0;
+
+release_claimed_interfaces:
+	while (--i >= 0) {
+		int release_ret = libusb_release_interface(dev, i);
+		if (release_ret < 0) {
+			fprintf(stderr, "libusb_release_interface failed: %s\n",
+				libusb_error_name(release_ret));
+			fprintf(stderr, "Warning: could not release interface: %d\n", i);
+			/* move on and try releasing the remaining interfaces */
+		}
+	}
+
+out:
+	return ret;
+}
+
+static int usb_release_interfaces(libusb_device_handle *dev, int configuration)
+{
+	libusb_device *usb_device;
+	struct libusb_config_descriptor *config_desc;
+	int ret;
+	int i;
+
+	usb_device = libusb_get_device(dev);
+	if (usb_device == NULL)
+		return -ENODEV;
+
+	ret = libusb_get_config_descriptor_by_value(usb_device, configuration, &config_desc);
+	if (ret < 0)
+		goto out;
+
+	for (i = 0; i < config_desc->bNumInterfaces; i++) {
+		ret = libusb_release_interface(dev, i);
+		if (ret < 0) {
+			fprintf(stderr, "libusb_release_interface failed: %s\n",
+				libusb_error_name(ret));
+			fprintf(stderr, "Warning: could not release interface: %d\n", i);
+			/* move on and try releasing the remaining interfaces */
+		}
+	}
+
+	libusb_free_config_descriptor(config_desc);
+out:
+	return ret;
+}
+
 /*
  * Long payloads have some bytes on the 64 bytes boundary of the packet which
  * have to be skipped when copying data.
@@ -821,83 +897,6 @@ static int init(goodix_fp_device *dev)
 out:
 	return ret;
 }
-
-static int usb_claim_interfaces(libusb_device_handle *dev, int configuration)
-{
-	libusb_device *usb_device;
-	struct libusb_config_descriptor *config_desc;
-	int num_interfaces;
-	int ret;
-	int i;
-
-	usb_device = libusb_get_device(dev);
-	if (usb_device == NULL)
-		return -ENODEV;
-
-	ret = libusb_get_config_descriptor_by_value(usb_device, configuration, &config_desc);
-	if (ret < 0)
-		goto out;
-
-	num_interfaces = config_desc->bNumInterfaces;
-	libusb_free_config_descriptor(config_desc);
-
-	for (i = 0; i < num_interfaces; i++) {
-		ret = libusb_claim_interface(dev, i);
-		if (ret < 0) {
-			fprintf(stderr, "libusb_claim_interface failed: %s\n",
-				libusb_error_name(ret));
-			fprintf(stderr, "Cannot claim interface %d\n", i);
-			goto release_claimed_interfaces;
-		}
-	}
-
-	return 0;
-
-release_claimed_interfaces:
-	while (--i >= 0) {
-		int release_ret = libusb_release_interface(dev, i);
-		if (release_ret < 0) {
-			fprintf(stderr, "libusb_release_interface failed: %s\n",
-				libusb_error_name(release_ret));
-			fprintf(stderr, "Warning: could not release interface: %d\n", i);
-			/* move on and try releasing the remaining interfaces */
-		}
-	}
-
-out:
-	return ret;
-}
-
-static int usb_release_interfaces(libusb_device_handle *dev, int configuration)
-{
-	libusb_device *usb_device;
-	struct libusb_config_descriptor *config_desc;
-	int ret;
-	int i;
-
-	usb_device = libusb_get_device(dev);
-	if (usb_device == NULL)
-		return -ENODEV;
-
-	ret = libusb_get_config_descriptor_by_value(usb_device, configuration, &config_desc);
-	if (ret < 0)
-		goto out;
-
-	for (i = 0; i < config_desc->bNumInterfaces; i++) {
-		ret = libusb_release_interface(dev, i);
-		if (ret < 0) {
-			fprintf(stderr, "libusb_release_interface failed: %s\n",
-				libusb_error_name(ret));
-			fprintf(stderr, "Warning: could not release interface: %d\n", i);
-			/* move on and try releasing the remaining interfaces */
-		}
-	}
-
-	libusb_free_config_descriptor(config_desc);
-out:
-	return ret;
-}
-
 
 /* dev is only populated when the function returns 0 */
 static int goodix_fp_device_open(goodix_fp_device **dev)
