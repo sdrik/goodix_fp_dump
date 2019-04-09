@@ -8,20 +8,80 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
 #include <errno.h>
 #include <libusb.h>
 
-#define GOODIX_FP_VID            0x27c6
-#define GOODIX_FP_PID            0x5385
-#define GOODIX_FP_CONFIGURATION  1
-#define GOODIX_FP_IN_EP          0x81
-#define GOODIX_FP_OUT_EP         0x03
+#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
 #define trace(...) fprintf(stderr, __VA_ARGS__)
 #define error(...) fprintf(stderr, __VA_ARGS__)
 #define warning(...) fprintf(stderr, __VA_ARGS__)
+
+struct goodix_fp_usb_device_descriptor {
+	uint16_t vendor_id;
+	uint16_t product_id;
+	uint8_t configuration;
+	uint8_t interface;
+	uint8_t output_endpoint;
+	uint8_t input_endpoint;
+
+};
+
+static const struct goodix_fp_usb_device_descriptor supported_devices[] = {
+	{
+		/* found on ASUS ZenBook S UX391FA AH001T */
+		.vendor_id = 0x27c6,
+		.product_id = 0x5201,
+		.configuration = 1,
+		.output_endpoint = 0x03,
+		.input_endpoint = 0x81,
+	},
+	{
+		/* found on Dell XPS 13 9370/9380 */
+		.vendor_id = 0x27c6,
+		.product_id = 0x5385,
+		.configuration = 1,
+		.output_endpoint = 0x03,
+		.input_endpoint = 0x81,
+	},
+	{
+		/* found on Dell XPS 13 9570 */
+		.vendor_id = 0x27c6,
+		.product_id = 0x5395,
+		.configuration = 1,
+		.output_endpoint = 0x03,
+		.input_endpoint = 0x81,
+	},
+	{
+		/* found on Teclast F6 Pro */
+		.vendor_id = 0x27c6,
+		.product_id = 0x5740,
+		.configuration = 1,
+		.output_endpoint = 0x03,
+		.input_endpoint = 0x81,
+	},
+#if 0
+	/* XXX Needs testing, wMaxPacketSize is different too */
+	{
+		/* found on Lenovo Yoga 730 13IWL-81JR */
+		.vendor_id = 0x27c6,
+		.product_id = 0x5584,
+		.configuration = 0,
+		.output_endpoint = 0x01,
+		.input_endpoint = 0x82,
+	},
+#endif
+};
+
+struct _goodix_fp_device {
+	libusb_device_handle *usb_device;
+	const struct goodix_fp_usb_device_descriptor *desc;
+};
+
+typedef struct _goodix_fp_device goodix_fp_device;
 
 /*
  * The device expects umeric values as little-endian.
@@ -122,7 +182,8 @@ static void trace_in_packet(goodix_fp_in_packet *packet)
 	trace("\n");
 }
 
-static int send_data(libusb_device_handle *dev, uint8_t *buffer, int len)
+static int send_data(libusb_device_handle *dev, uint8_t out_ep,
+		     uint8_t *buffer, int len)
 {
 	int ret;
 	int transferred;
@@ -130,7 +191,7 @@ static int send_data(libusb_device_handle *dev, uint8_t *buffer, int len)
 	trace_dump_buffer("sending -->", buffer, len);
 
 	transferred = 0;
-	ret = libusb_bulk_transfer(dev, GOODIX_FP_OUT_EP, buffer, len, &transferred, 0);
+	ret = libusb_bulk_transfer(dev, out_ep, buffer, len, &transferred, 0);
 	if (ret != 0 || transferred != len) {
 		error("%s. Transferred: %d (expected %u)\n",
 		      libusb_error_name(ret), transferred, len);
@@ -140,13 +201,14 @@ static int send_data(libusb_device_handle *dev, uint8_t *buffer, int len)
 	return 0;
 }
 
-static int read_data(libusb_device_handle *dev, uint8_t *buffer, int len)
+static int read_data(libusb_device_handle *dev, uint8_t in_ep,
+		     uint8_t *buffer, int len)
 {
 	int ret;
 	int transferred;
 
 	transferred = 0;
-	ret = libusb_bulk_transfer(dev, GOODIX_FP_IN_EP, buffer, len, &transferred, 0);
+	ret = libusb_bulk_transfer(dev, in_ep, buffer, len, &transferred, 0);
 	if (ret != 0) {
 		error("%s. Transferred: %d (expected %u)\n",
 		      libusb_error_name(ret), transferred, len);
@@ -225,7 +287,7 @@ static uint8_t calc_checksum(uint8_t packet_type, uint8_t *payload, uint16_t pay
 	return (uint8_t)(0xaa - sum);
 }
 
-static int send_payload(libusb_device_handle *dev,
+static int send_payload(goodix_fp_device *dev,
 			goodix_fp_packet_type packet_type,
 			uint8_t *request, uint16_t request_size)
 {
@@ -260,7 +322,8 @@ static int send_payload(libusb_device_handle *dev,
 	memcpy(dst, src, chunk_size);
 
 	trace_out_packet(&packet);
-	ret = send_data(dev, packet.data, sizeof(packet.data));
+	ret = send_data(dev->usb_device, dev->desc->output_endpoint,
+			packet.data, sizeof(packet.data));
 	if (ret < 0)
 		goto out;
 
@@ -276,7 +339,8 @@ static int send_payload(libusb_device_handle *dev,
 		memcpy(dst, src, chunk_size);
 
 		trace_out_packet(&packet);
-		ret = send_data(dev, packet.data, sizeof(packet.data));
+		ret = send_data(dev->usb_device, dev->desc->output_endpoint,
+				packet.data, sizeof(packet.data));
 		if (ret < 0)
 			goto out;
 
@@ -291,7 +355,8 @@ send_last_packet:
 	memcpy(dst, src, remaining);
 
 	trace_out_packet(&packet);
-	ret = send_data(dev, packet.data, sizeof(packet.data));
+	ret = send_data(dev->usb_device, dev->desc->output_endpoint,
+			packet.data, sizeof(packet.data));
 	if (ret < 0)
 		goto out;
 
@@ -299,7 +364,7 @@ out:
 	return ret;
 }
 
-static int send_packet_full(libusb_device_handle *dev,
+static int send_packet_full(goodix_fp_device *dev,
 			    goodix_fp_packet_type packet_type,
 			    uint8_t *request, uint16_t request_size,
 			    uint8_t *response, uint16_t *response_size,
@@ -324,7 +389,8 @@ static int send_packet_full(libusb_device_handle *dev,
 	if (ret < 0)
 		goto out;
 
-	ret = read_data(dev, reply.data, sizeof(reply.data));
+	ret = read_data(dev->usb_device, dev->desc->input_endpoint,
+			reply.data, sizeof(reply.data));
 	if (ret < 0)
 		goto out;
 
@@ -357,7 +423,8 @@ static int send_packet_full(libusb_device_handle *dev,
 		warning("Unexpected status for packet %02x (expected 0x01, got 0x%02x)\n", packet.fields.type, reply.reply_packet.status);
 
 	if (response) {
-		ret = read_data(dev, reply.data, sizeof(reply.data));
+		ret = read_data(dev->usb_device, dev->desc->input_endpoint,
+				reply.data, sizeof(reply.data));
 		if (ret < 0)
 			goto out;
 
@@ -399,7 +466,7 @@ out:
 }
 
 /* Usually packets do not need to change the verify_data_checksum parameter. */
-static int send_packet(libusb_device_handle *dev,
+static int send_packet(goodix_fp_device *dev,
 		       goodix_fp_packet_type packet_type,
 		       uint8_t *request, uint16_t request_size,
 		       uint8_t *response, uint16_t *response_size)
@@ -408,7 +475,7 @@ static int send_packet(libusb_device_handle *dev,
 }
 
 /* Simple packets are those without a particular request buffer. */
-static int send_packet_simple(libusb_device_handle *dev,
+static int send_packet_simple(goodix_fp_device *dev,
 			      goodix_fp_packet_type packet_type,
 			      uint8_t *response,  uint16_t *response_size)
 {
@@ -417,7 +484,7 @@ static int send_packet_simple(libusb_device_handle *dev,
 	return send_packet(dev, packet_type, payload, 2, response, response_size);
 }
 
-static int get_msg_a8_firmware_version(libusb_device_handle *dev)
+static int get_msg_a8_firmware_version(goodix_fp_device *dev)
 {
 	int ret;
 	char firmware_version[64] = "";
@@ -433,14 +500,14 @@ out:
 	return ret;
 }
 
-static int get_msg_a2_reset(libusb_device_handle *dev)
+static int get_msg_a2_reset(goodix_fp_device *dev)
 {
 	uint8_t payload[2] = { 0x01, 0x14 };
 
 	return send_packet(dev, GOODIX_FP_PACKET_TYPE_RESET, payload, 2, NULL, NULL);
 }
 
-static int get_msg_82(libusb_device_handle *dev)
+static int get_msg_82(goodix_fp_device *dev)
 {
 	int ret;
 	uint8_t payload[5] = {0x00, 0x00, 0x00, 0x04, 0x00 };
@@ -457,7 +524,7 @@ out:
 	return ret;
 }
 
-static int get_msg_a6_otp(libusb_device_handle *dev)
+static int get_msg_a6_otp(goodix_fp_device *dev)
 {
 	int ret;
 	uint8_t otp[32];
@@ -473,7 +540,7 @@ out:
 	return ret;
 }
 
-static int get_msg_e4_psk(libusb_device_handle *dev)
+static int get_msg_e4_psk(goodix_fp_device *dev)
 {
 	int ret;
 	uint8_t request_psk[4] = "\x01\xb0\x00\x00";
@@ -526,7 +593,7 @@ out:
 }
 
 /* some negotiation happens with packet d2 */
-static int get_msg_d2_handshake(libusb_device_handle *dev)
+static int get_msg_d2_handshake(goodix_fp_device *dev)
 {
 	int ret;
 	unsigned int i;
@@ -579,7 +646,7 @@ out:
 	return ret;
 }
 
-static int get_msg_90_config(libusb_device_handle *dev)
+static int get_msg_90_config(goodix_fp_device *dev)
 {
 	int ret;
 	uint8_t config[256] = "\x40\x11\x6c\x7d\x28\xa5\x28\xcd\x1c\xe9\x10\xf9\x00\xf9\x00\xf9" \
@@ -615,7 +682,7 @@ out:
 	return ret;
 }
 
-static int get_msg_36(libusb_device_handle *dev)
+static int get_msg_36(goodix_fp_device *dev)
 {
 	int ret;
 	uint8_t request[26] = "\x0d\x01" \
@@ -635,7 +702,7 @@ out:
 }
 
 /* this is probably the message to get an image, together with 36 */
-static int get_msg_20(libusb_device_handle *dev)
+static int get_msg_20(goodix_fp_device *dev)
 {
 	int ret;
 	uint8_t request[4] = "\x01\x06\xcf\x00";
@@ -657,25 +724,25 @@ out:
 #if 0
 
 /* maybe some shutdown message */
-static int get_msg_60(libusb_device_handle *dev)
+static int get_msg_60(goodix_fp_device *dev)
 {}
 
 /* maybe some shutdown message */
-static int get_msg_ae(libusb_device_handle *dev)
+static int get_msg_ae(goodix_fp_device *dev)
 {}
 
 /* maybe some shutdown message */
-static int get_msg_32(libusb_device_handle *dev)
+static int get_msg_32(goodix_fp_device *dev)
 {}
 
 #endif
 
-static int init(libusb_device_handle *dev)
+static int init(goodix_fp_device *dev)
 {
 	int ret;
 	uint8_t buffer[32768] = { 0 };
 
-	ret =libusb_control_transfer(dev,
+	ret =libusb_control_transfer(dev->usb_device,
 				     LIBUSB_ENDPOINT_IN |
 				     LIBUSB_REQUEST_TYPE_VENDOR |
 				     LIBUSB_RECIPIENT_DEVICE,
@@ -686,7 +753,7 @@ static int init(libusb_device_handle *dev)
 	}
 	trace_dump_buffer("<-- received", buffer, ret);
 
-	ret = libusb_control_transfer(dev,
+	ret = libusb_control_transfer(dev->usb_device,
 				      LIBUSB_ENDPOINT_IN |
 				      LIBUSB_REQUEST_TYPE_VENDOR |
 				      LIBUSB_RECIPIENT_DEVICE,
@@ -831,45 +898,92 @@ out:
 	return ret;
 }
 
-static int usb_device_open(libusb_device_handle **dev)
-{
-	int ret;
 
-	*dev = libusb_open_device_with_vid_pid(NULL, GOODIX_FP_VID, GOODIX_FP_PID);
-	if (*dev == NULL) {
-		fprintf(stderr, "libusb_open failed: %s\n", strerror(errno));
-		ret = -errno;
+/* dev is only populated when the function returns 0 */
+static int goodix_fp_device_open(goodix_fp_device **dev)
+{
+	libusb_device **list;
+	libusb_device_handle *usb_dev;
+	goodix_fp_device *new_dev;
+	ssize_t num_devices;
+	int current_configuration;
+	int ret;
+	int i;
+
+	num_devices = libusb_get_device_list(NULL, &list);
+	if (num_devices < 0) {
+		ret = -ENODEV;
 		goto out;
 	}
 
+	new_dev = NULL;
+	for (i = 0; i < num_devices; i++) {
+		struct libusb_device_descriptor desc;
+		unsigned int j;
+
+		ret = libusb_get_device_descriptor(list[i], &desc);
+		if (ret < 0)
+			continue;
+
+		for (j = 0; j < ARRAY_SIZE(supported_devices); j++) {
+			if (desc.idVendor == supported_devices[j].vendor_id &&
+			    desc.idProduct == supported_devices[j].product_id) {
+
+				ret = libusb_open(list[i], &usb_dev);
+				if (ret < 0) {
+					fprintf(stderr, "libusb_open failed: %s\n", libusb_error_name(ret));
+					goto out;
+				}
+
+				new_dev = malloc(sizeof(*new_dev));
+				if (new_dev == NULL) {
+					ret = -ENOMEM;
+					goto out;
+				}
+				new_dev->usb_device = usb_dev;
+				new_dev->desc = &supported_devices[j];
+
+				/* only support the first device on the system */
+				goto done;
+			}
+		}
+	}
+	if (new_dev == NULL) {
+		fprintf(stderr, "Cannot find any device to open\n");
+		ret = -ENODEV;
+		goto out;
+	}
+done:
+
+
 #if 0
 	/* in case the device starts to act up */
-	libusb_reset_device(*dev);
+	libusb_reset_device(usb_dev);
 #endif
 
-	int current_configuration = -1;
-	ret = libusb_get_configuration(*dev, &current_configuration);
+	current_configuration = -1;
+	ret = libusb_get_configuration(usb_dev, &current_configuration);
 	if (ret < 0) {
 		fprintf(stderr, "libusb_get_configuration failed: %s\n",
 			libusb_error_name(ret));
 		goto out_libusb_close;
 	}
 
-	if (current_configuration != GOODIX_FP_CONFIGURATION) {
-		ret = libusb_set_configuration(*dev, GOODIX_FP_CONFIGURATION);
+	if (current_configuration != new_dev->desc->configuration) {
+		ret = libusb_set_configuration(usb_dev, new_dev->desc->configuration);
 		if (ret < 0) {
 			fprintf(stderr, "libusb_set_configuration failed: %s\n",
 				libusb_error_name(ret));
 			fprintf(stderr, "Cannot set configuration %d\n",
-				GOODIX_FP_CONFIGURATION);
+				new_dev->desc->configuration);
 			goto out_libusb_close;
 		}
 	}
 
-	libusb_set_auto_detach_kernel_driver(*dev, 1);
+	libusb_set_auto_detach_kernel_driver(usb_dev, 1);
 
 	/* Claim all interfaces, the cdc_acm driver may be bound to them. */
-	ret = usb_claim_interfaces(*dev, GOODIX_FP_CONFIGURATION);
+	ret = usb_claim_interfaces(usb_dev, new_dev->desc->configuration);
 	if (ret < 0)
 		goto out_libusb_close;
 
@@ -878,39 +992,45 @@ static int usb_device_open(libusb_device_handle **dev)
 	 * http://libusb.sourceforge.net/api-1.0/caveats.html
 	 */
 	current_configuration = -1;
-	ret = libusb_get_configuration(*dev, &current_configuration);
+	ret = libusb_get_configuration(usb_dev, &current_configuration);
 	if (ret < 0) {
 		fprintf(stderr, "libusb_get_configuration after claim failed: %s\n",
 			libusb_error_name(ret));
 		goto out_release_interfaces;
 	}
 
-	if (current_configuration != GOODIX_FP_CONFIGURATION) {
+	if (current_configuration != new_dev->desc->configuration) {
 		fprintf(stderr, "libusb configuration changed (expected: %d, current: %d)\n",
-			GOODIX_FP_CONFIGURATION, current_configuration);
+			new_dev->desc->configuration, current_configuration);
 		ret = -EINVAL;
 		goto out_release_interfaces;
 	}
 
-	return 0;
+	*dev = new_dev;
+	ret = 0;
+	goto out;
 
 out_release_interfaces:
-	usb_release_interfaces(*dev, GOODIX_FP_CONFIGURATION);
+	usb_release_interfaces(usb_dev, new_dev->desc->configuration);
 out_libusb_close:
-	libusb_close(*dev);
+	free(new_dev);
+	libusb_close(usb_dev);
+
 out:
+	libusb_free_device_list(list, 1);
 	return ret;
 }
 
-static void usb_device_close(libusb_device_handle *dev)
+static void goodix_fp_device_close(goodix_fp_device *dev)
 {
-	usb_release_interfaces(dev, GOODIX_FP_CONFIGURATION);
-	libusb_close(dev);
+	usb_release_interfaces(dev->usb_device, dev->desc->configuration);
+	libusb_close(dev->usb_device);
+	free(dev);
 }
 
 int main(void)
 {
-	libusb_device_handle *dev;
+	goodix_fp_device *dev;
 	int ret;
 
 	ret = libusb_init(NULL);
@@ -926,13 +1046,13 @@ int main(void)
 	libusb_set_debug(NULL, 3);
 #endif
 
-	ret = usb_device_open(&dev);
+	ret = goodix_fp_device_open(&dev);
 	if (ret < 0)
 		goto out_libusb_exit;
 
 	ret = init(dev);
 
-	usb_device_close(dev);
+	goodix_fp_device_close(dev);
 
 out_libusb_exit:
 	libusb_exit(NULL);
