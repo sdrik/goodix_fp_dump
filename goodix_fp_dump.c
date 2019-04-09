@@ -182,8 +182,8 @@ static void trace_in_packet(goodix_fp_in_packet *packet)
 	trace("\n");
 }
 
-static int send_data(libusb_device_handle *dev, uint8_t out_ep,
-		     uint8_t *buffer, int len)
+static int usb_send_data(libusb_device_handle *dev, uint8_t out_ep,
+			 uint8_t *buffer, int len)
 {
 	int ret;
 	int transferred;
@@ -201,8 +201,8 @@ static int send_data(libusb_device_handle *dev, uint8_t out_ep,
 	return 0;
 }
 
-static int read_data(libusb_device_handle *dev, uint8_t in_ep,
-		     uint8_t *buffer, int len)
+static int usb_read_data(libusb_device_handle *dev, uint8_t in_ep,
+			 uint8_t *buffer, int len)
 {
 	int ret;
 	int transferred;
@@ -322,8 +322,8 @@ static int send_payload(goodix_fp_device *dev,
 	memcpy(dst, src, chunk_size);
 
 	trace_out_packet(&packet);
-	ret = send_data(dev->usb_device, dev->desc->output_endpoint,
-			packet.data, sizeof(packet.data));
+	ret = usb_send_data(dev->usb_device, dev->desc->output_endpoint,
+			    packet.data, sizeof(packet.data));
 	if (ret < 0)
 		goto out;
 
@@ -339,8 +339,8 @@ static int send_payload(goodix_fp_device *dev,
 		memcpy(dst, src, chunk_size);
 
 		trace_out_packet(&packet);
-		ret = send_data(dev->usb_device, dev->desc->output_endpoint,
-				packet.data, sizeof(packet.data));
+		ret = usb_send_data(dev->usb_device, dev->desc->output_endpoint,
+				    packet.data, sizeof(packet.data));
 		if (ret < 0)
 			goto out;
 
@@ -355,8 +355,8 @@ send_last_packet:
 	memcpy(dst, src, remaining);
 
 	trace_out_packet(&packet);
-	ret = send_data(dev->usb_device, dev->desc->output_endpoint,
-			packet.data, sizeof(packet.data));
+	ret = usb_send_data(dev->usb_device, dev->desc->output_endpoint,
+			    packet.data, sizeof(packet.data));
 	if (ret < 0)
 		goto out;
 
@@ -389,8 +389,8 @@ static int send_packet_full(goodix_fp_device *dev,
 	if (ret < 0)
 		goto out;
 
-	ret = read_data(dev->usb_device, dev->desc->input_endpoint,
-			reply.data, sizeof(reply.data));
+	ret = usb_read_data(dev->usb_device, dev->desc->input_endpoint,
+			    reply.data, sizeof(reply.data));
 	if (ret < 0)
 		goto out;
 
@@ -423,8 +423,8 @@ static int send_packet_full(goodix_fp_device *dev,
 		warning("Unexpected status for packet %02x (expected 0x01, got 0x%02x)\n", packet.fields.type, reply.reply_packet.status);
 
 	if (response) {
-		ret = read_data(dev->usb_device, dev->desc->input_endpoint,
-				reply.data, sizeof(reply.data));
+		ret = usb_read_data(dev->usb_device, dev->desc->input_endpoint,
+				    reply.data, sizeof(reply.data));
 		if (ret < 0)
 			goto out;
 
