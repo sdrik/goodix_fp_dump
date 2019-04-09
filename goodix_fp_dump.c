@@ -770,6 +770,90 @@ static int claim_interface(libusb_device_handle *dev, int interface_number)
 	return ret;
 }
 
+static int usb_device_open(libusb_device_handle **dev)
+{
+	int ret;
+
+	*dev = libusb_open_device_with_vid_pid(NULL, GOODIX_FP_VID, GOODIX_FP_PID);
+	if (*dev == NULL) {
+		fprintf(stderr, "libusb_open failed: %s\n", strerror(errno));
+		ret = -errno;
+		goto out;
+	}
+
+#if 0
+	/* in case the device starts to act up */
+	libusb_reset_device(*dev);
+#endif
+
+	int current_configuration = -1;
+	ret = libusb_get_configuration(*dev, &current_configuration);
+	if (ret < 0) {
+		fprintf(stderr, "libusb_get_configuration failed: %s\n",
+			libusb_error_name(ret));
+		goto out_libusb_close;
+	}
+
+	if (current_configuration != GOODIX_FP_CONFIGURATION) {
+		ret = libusb_set_configuration(*dev, GOODIX_FP_CONFIGURATION);
+		if (ret < 0) {
+			fprintf(stderr, "libusb_set_configuration failed: %s\n",
+				libusb_error_name(ret));
+			fprintf(stderr, "Cannot set configuration %d\n",
+				GOODIX_FP_CONFIGURATION);
+			goto out_libusb_close;
+		}
+	}
+
+	libusb_set_auto_detach_kernel_driver(*dev, 1);
+
+	/* Claim both interfaces, the cdc_acm driver may be bound to them. */
+	ret = claim_interface(*dev, GOODIX_FP_COMM_INTERFACE);
+	if (ret < 0)
+		goto out_libusb_close;
+
+	ret = claim_interface(*dev, GOODIX_FP_DATA_INTERFACE);
+	if (ret < 0)
+		goto out_libusb_release_comm_interface;
+
+	/*
+	 * Checking that the configuration has not changed, as suggested in
+	 * http://libusb.sourceforge.net/api-1.0/caveats.html
+	 */
+	current_configuration = -1;
+	ret = libusb_get_configuration(*dev, &current_configuration);
+	if (ret < 0) {
+		fprintf(stderr, "libusb_get_configuration after claim failed: %s\n",
+			libusb_error_name(ret));
+		goto out_libusb_release_interfaces;
+	}
+
+	if (current_configuration != GOODIX_FP_CONFIGURATION) {
+		fprintf(stderr, "libusb configuration changed (expected: %d, current: %d)\n",
+			GOODIX_FP_CONFIGURATION, current_configuration);
+		ret = -EINVAL;
+		goto out_libusb_release_interfaces;
+	}
+
+	return 0;
+
+out_libusb_release_interfaces:
+	libusb_release_interface(*dev, GOODIX_FP_DATA_INTERFACE);
+out_libusb_release_comm_interface:
+	libusb_release_interface(*dev, GOODIX_FP_COMM_INTERFACE);
+out_libusb_close:
+	libusb_close(*dev);
+out:
+	return ret;
+}
+
+static void usb_device_close(libusb_device_handle *dev)
+{
+	libusb_release_interface(dev, GOODIX_FP_DATA_INTERFACE);
+	libusb_release_interface(dev, GOODIX_FP_COMM_INTERFACE);
+	libusb_close(dev);
+}
+
 int main(void)
 {
 	libusb_device_handle *dev;
@@ -784,75 +868,14 @@ int main(void)
 
 	libusb_set_option(NULL, LIBUSB_OPTION_LOG_LEVEL, 3);
 
-	dev = libusb_open_device_with_vid_pid(NULL, GOODIX_FP_VID, GOODIX_FP_PID);
-	if (dev == NULL) {
-		fprintf(stderr, "libusb_open failed: %s\n", strerror(errno));
-		ret = -errno;
+	ret = usb_device_open(&dev);
+	if (ret < 0)
 		goto out_libusb_exit;
-	}
 
-#if 0
-	/* in case the device starts to act up */
-	libusb_reset_device(dev);
-#endif
+	ret = init(dev);
 
-	int current_configuration = -1;
-	ret = libusb_get_configuration(dev, &current_configuration);
-	if (ret < 0) {
-		fprintf(stderr, "libusb_get_configuration failed: %s\n",
-			libusb_error_name(ret));
-		goto out_libusb_close;
-	}
+	usb_device_close(dev);
 
-	if (current_configuration != GOODIX_FP_CONFIGURATION) {
-		ret = libusb_set_configuration(dev, GOODIX_FP_CONFIGURATION);
-		if (ret < 0) {
-			fprintf(stderr, "libusb_set_configuration failed: %s\n",
-				libusb_error_name(ret));
-			fprintf(stderr, "Cannot set configuration %d\n",
-				GOODIX_FP_CONFIGURATION);
-			goto out_libusb_close;
-		}
-	}
-
-	libusb_set_auto_detach_kernel_driver(dev, 1);
-
-	/* Claim both interfaces, the cdc_acm driver may be bound to them. */
-	ret = claim_interface(dev, GOODIX_FP_COMM_INTERFACE);
-	if (ret < 0)
-		goto out_libusb_close;
-
-	ret = claim_interface(dev, GOODIX_FP_DATA_INTERFACE);
-	if (ret < 0)
-		goto out_libusb_release_comm_interface;
-
-	/*
-	 * Checking that the configuration has not changed, as suggested in
-	 * http://libusb.sourceforge.net/api-1.0/caveats.html
-	 */
-	current_configuration = -1;
-	ret = libusb_get_configuration(dev, &current_configuration);
-	if (ret < 0) {
-		fprintf(stderr, "libusb_get_configuration after claim failed: %s\n",
-			libusb_error_name(ret));
-		goto out_libusb_release_interfaces;
-	}
-
-	if (current_configuration != GOODIX_FP_CONFIGURATION) {
-		fprintf(stderr, "libusb configuration changed (expected: %d, current: %d)\n",
-			GOODIX_FP_CONFIGURATION, current_configuration);
-		ret = -EINVAL;
-		goto out_libusb_release_interfaces;
-	}
-
-	init(dev);
-
-out_libusb_release_interfaces:
-	libusb_release_interface(dev, GOODIX_FP_DATA_INTERFACE);
-out_libusb_release_comm_interface:
-	libusb_release_interface(dev, GOODIX_FP_COMM_INTERFACE);
-out_libusb_close:
-	libusb_close(dev);
 out_libusb_exit:
 	libusb_exit(NULL);
 out:
