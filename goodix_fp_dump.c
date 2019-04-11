@@ -62,17 +62,14 @@ static const struct goodix_fp_usb_device_descriptor supported_devices[] = {
 		.output_endpoint = 0x03,
 		.input_endpoint = 0x81,
 	},
-#if 0
-	/* XXX Needs testing, wMaxPacketSize is different too */
 	{
 		/* found on Lenovo Yoga 730 13IWL-81JR */
 		.vendor_id = 0x27c6,
 		.product_id = 0x5584,
-		.configuration = 0,
+		.configuration = 1,
 		.output_endpoint = 0x01,
 		.input_endpoint = 0x82,
 	},
-#endif
 };
 
 struct _goodix_fp_device {
