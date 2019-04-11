@@ -24,7 +24,6 @@ struct goodix_fp_usb_device_descriptor {
 	uint16_t vendor_id;
 	uint16_t product_id;
 	uint8_t configuration;
-	uint8_t interface;
 	uint8_t output_endpoint;
 	uint8_t input_endpoint;
 
