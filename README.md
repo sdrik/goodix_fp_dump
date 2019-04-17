@@ -120,3 +120,9 @@ This is the generic reply, it is sent in response to every packet and precedes t
 ### Packet 0xa8
 
 This returns the firmware version.
+
+# Notes
+
+[Ghidra](https://ghidra-sre.org/) project files for Windows drivers, with some
+renamed functions and variables, are available here:
+https://people.collabora.com/~ao2/ghidra-projects-2019-04-17.tar.gz
