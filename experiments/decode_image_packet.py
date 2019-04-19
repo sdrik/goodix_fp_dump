@@ -7,9 +7,10 @@
 #
 # SPDX-License-Identifier: LGPL-2.1-or-later
 
-import binascii
 import struct
 import sys
+
+import crcmod
 
 
 # The data passed is the raw image packet received from a Goodix fingerprint
@@ -112,18 +113,24 @@ def main():
     # (probably some header), and the last 4 bytes too as they should be a crc.
     image_data = payload[5:-4]
 
-    fout = open('image.bin', 'wb+')
-    fout.write(bytearray(payload))
+    fout = open('image_data.bin', 'wb+')
+    fout.write(bytearray(image_data))
     fout.close()
 
-    # XXX the CRC has not been fully figured out yet.
-    #
-    # It should be the on the last 4 bytes, but the value does not match, the
-    # calculated one.
-    crc = struct.unpack_from('<I', payload[-4:])[0]
-    print(crc)
-    print(hex(crc))
-    print(hex(binascii.crc32(image_data)))
+    # CRC is on the last 4 bytes, but it is in a mixed endian scheme.
+    # Swap two big endian 16-bit values
+    data_crc = \
+            struct.unpack_from('>H', payload[-2:])[0] << 16 | \
+            struct.unpack_from('>H', payload[-4:])[0]
+
+    # The algorithm used is CRC-32/MPEG-2
+    crc32_func = crcmod.predefined.mkCrcFun('crc-32-mpeg')
+    calc_crc = crc32_func(image_data)
+
+    print(hex(data_crc))
+    print(hex(calc_crc))
+
+    assert data_crc == calc_crc
 
     unpacked = unpack_data_to_16bit_le(image_data)
     fout = open('unpacked_image.bin', 'wb+')
