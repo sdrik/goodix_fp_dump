@@ -55,7 +55,7 @@ def extract_payload(data):
 
 
 # data is 12-bit packed, unpack it to 16-bit elements
-def unpack_data_to_16bit_le(data):
+def unpack_data_to_16bit(data):
     # 3 bytes are needed to represent 2 16-bit values
     assert (len(data) % 3) == 0
 
@@ -64,34 +64,36 @@ def unpack_data_to_16bit_le(data):
 
     i = 0
     offset = 0
-    unpacked_data = []
+    unpacked_values = []
 
     while i < num_values:
         tmp_buffer = (data[offset] << 16) | (data[offset + 1] << 8) | data[offset + 2]
 
         value1 = (tmp_buffer >> 12) & mask
-        upper = (value1 >> 8) & 0xff
-        lower = value1 & 0xff
-        # Write single bytes in little-endian order
-        unpacked_data.append(lower)
-        unpacked_data.append(upper)
+        unpacked_values.append(value1)
 
         value2 = tmp_buffer & mask
-        upper = (value2 >> 8) & 0xff
-        lower = value2 & 0xff
-        # Write single bytes in little-endian order
-        unpacked_data.append(lower)
-        unpacked_data.append(upper)
-
-        # If instead one wants a single 16bit value, something like the
-        # following can be used:
-        #   dest.append(value1)
-        #   dest.append(value2)
+        unpacked_values.append(value2)
 
         i += 2
         offset += 3
 
-    return unpacked_data
+    return unpacked_values
+
+
+def save_as_16bit_le(unpacked_values):
+    unpacked_data = []
+
+    for value in unpacked_values:
+        upper = (value >> 8) & 0xff
+        lower = value & 0xff
+        # Write single bytes in little-endian order
+        unpacked_data.append(lower)
+        unpacked_data.append(upper)
+
+    fout = open('unpacked_image.bin', 'wb+')
+    fout.write(bytearray(unpacked_data))
+    fout.close()
 
 
 def main():
@@ -132,10 +134,8 @@ def main():
 
     assert data_crc == calc_crc
 
-    unpacked = unpack_data_to_16bit_le(image_data)
-    fout = open('unpacked_image.bin', 'wb+')
-    fout.write(bytearray(unpacked))
-    fout.close()
+    unpacked_values = unpack_data_to_16bit(image_data)
+    save_as_16bit_le(unpacked_values)
 
     return 0
 
