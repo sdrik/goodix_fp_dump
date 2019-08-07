@@ -70,6 +70,14 @@ static const struct goodix_fp_usb_device_descriptor supported_devices[] = {
 		.output_endpoint = 0x01,
 		.input_endpoint = 0x82,
 	},
+	{
+		/* found on Lenovo Flex 81SS */
+		.vendor_id = 0x27c6,
+		.product_id = 0x55b4,
+		.configuration = 1,
+		.output_endpoint = 0x01,
+		.input_endpoint = 0x82,
+	},
 };
 
 struct _goodix_fp_device {
