@@ -78,6 +78,14 @@ static const struct goodix_fp_usb_device_descriptor supported_devices[] = {
 		.output_endpoint = 0x01,
 		.input_endpoint = 0x82,
 	},
+	{
+		/* found on Dell G3 3579, Dell G3 3779, and Dell Inspiron 7577 */
+		.vendor_id = 0x27c6,
+		.product_id = 0x5301,
+		.configuration = 1,
+		.output_endpoint = 0x03,
+		.input_endpoint = 0x81,
+	},
 };
 
 struct _goodix_fp_device {
