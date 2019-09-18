@@ -155,8 +155,8 @@ def main():
     crc32_func = crcmod.predefined.mkCrcFun('crc-32-mpeg')
     calc_crc = crc32_func(image_data)
 
-    print(hex(data_crc))
-    print(hex(calc_crc))
+    #print(hex(data_crc))
+    #print(hex(calc_crc))
 
     assert data_crc == calc_crc
 
