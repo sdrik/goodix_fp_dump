@@ -13,6 +13,11 @@ import sys
 import crcmod
 
 
+# Hardcode image size for now
+WIDTH = 108
+HEIGHT = 88
+
+
 # The data passed is the raw image packet received from a Goodix fingerprint
 # reader, e.g. the Leftover Capture Data of a USB URB in a Wireshark capture.
 def extract_payload(data):
@@ -120,6 +125,8 @@ def main():
     # (probably some header), and the last 4 bytes too as they should be a crc.
     image_data = payload[5:-4]
 
+    assert len(image_data) == WIDTH * HEIGHT * 3 / 2
+
     fout = open("image_data%s.bin" % suffix, 'wb+')
     fout.write(bytearray(image_data))
     fout.close()
@@ -140,6 +147,9 @@ def main():
     assert data_crc == calc_crc
 
     unpacked_values = unpack_data_to_16bit(image_data)
+
+    assert len(unpacked_values) == WIDTH * HEIGHT
+
     save_as_16bit_le(unpacked_values, suffix)
 
     return 0
