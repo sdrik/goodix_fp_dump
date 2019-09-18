@@ -81,7 +81,7 @@ def unpack_data_to_16bit(data):
     return unpacked_values
 
 
-def save_as_16bit_le(unpacked_values):
+def save_as_16bit_le(unpacked_values, suffix=""):
     unpacked_data = []
 
     for value in unpacked_values:
@@ -91,15 +91,20 @@ def save_as_16bit_le(unpacked_values):
         unpacked_data.append(lower)
         unpacked_data.append(upper)
 
-    fout = open('unpacked_image.bin', 'wb+')
+    fout = open("unpacked_image%s.bin" % suffix, 'wb+')
     fout.write(bytearray(unpacked_data))
     fout.close()
 
 
 def main():
     if len(sys.argv) < 2:
-        sys.stderr.write("usage: %s <datafile>\n" % sys.argv[0])
+        sys.stderr.write("usage: %s <datafile> [<suffix>]\n" % sys.argv[0])
         return 1
+
+    if sys.argv[2]:
+        suffix = "_" + sys.argv[2]
+    else:
+        suffix = ""
 
     fin = open(sys.argv[1], 'rb')
     buf = fin.read()
@@ -107,7 +112,7 @@ def main():
 
     payload = extract_payload(buf)
 
-    fout = open('payload.bin', 'wb+')
+    fout = open("payload%s.bin" % suffix, 'wb+')
     fout.write(bytearray(payload))
     fout.close()
 
@@ -115,7 +120,7 @@ def main():
     # (probably some header), and the last 4 bytes too as they should be a crc.
     image_data = payload[5:-4]
 
-    fout = open('image_data.bin', 'wb+')
+    fout = open("image_data%s.bin" % suffix, 'wb+')
     fout.write(bytearray(image_data))
     fout.close()
 
@@ -135,7 +140,7 @@ def main():
     assert data_crc == calc_crc
 
     unpacked_values = unpack_data_to_16bit(image_data)
-    save_as_16bit_le(unpacked_values)
+    save_as_16bit_le(unpacked_values, suffix)
 
     return 0
 
