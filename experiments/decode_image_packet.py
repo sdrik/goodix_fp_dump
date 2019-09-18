@@ -101,6 +101,20 @@ def save_as_16bit_le(unpacked_values, suffix=""):
     fout.close()
 
 
+def save_pgm(unpacked_values, suffix=""):
+    fout = open('unpacked_image%s.pgm' % suffix, 'w+')
+    fout.write('P2\n')
+    fout.write("%d %d\n" % (WIDTH, HEIGHT))
+
+    # 16bpp data
+    fout.write("4095\n")
+
+    for value in unpacked_values:
+        fout.write("%d\n" % value)
+
+    fout.close()
+
+
 def main():
     if len(sys.argv) < 2:
         sys.stderr.write("usage: %s <datafile> [<suffix>]\n" % sys.argv[0])
@@ -150,6 +164,7 @@ def main():
 
     assert len(unpacked_values) == WIDTH * HEIGHT
 
+    save_pgm(unpacked_values, suffix)
     save_as_16bit_le(unpacked_values, suffix)
 
     return 0
