@@ -82,7 +82,7 @@ def main():
 
     rgb_data = convert_to_pseudo_colors(gray16_data)
 
-    save_pnm(rgb_data,  "rgb.image%s.pnm" % suffix)
+    save_pnm(rgb_data,  "rgb_image%s.pnm" % suffix)
 
     fout = open("rgb_image%s.bin" % suffix, 'wb+')
     fout.write(bytearray(rgb_data))
