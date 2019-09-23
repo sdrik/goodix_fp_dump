@@ -96,9 +96,9 @@ struct _goodix_fp_device {
 typedef struct _goodix_fp_device goodix_fp_device;
 
 /*
- * The device expects umeric values as little-endian.
+ * The device expects numeric values as little-endian.
  *
- * Endian conversion is needed if the code is run on big-endian systems.
+ * XXX Proper endianness conversion is needed if the code is run on big-endian systems.
  */
 typedef union {
 	uint8_t data[64];
