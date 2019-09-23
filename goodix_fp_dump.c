@@ -910,6 +910,50 @@ static int get_msg_32(goodix_fp_device *dev)
 
 #endif
 
+static int init_device_220c(goodix_fp_device * dev)
+{
+	int ret;
+
+	ret = get_msg_a6_otp(dev);
+	if (ret < 0) {
+		error("Error, cannot get OTP: %d\n", ret);
+		goto out;
+	}
+
+	ret = get_msg_e4_psk(dev);
+	if (ret < 0) {
+		error("Error, cannot get message 0xe4: %d\n", ret);
+		goto out;
+	}
+
+	ret = get_msg_d2_handshake(dev);
+	if (ret < 0) {
+		error("Error, cannot perform handshake: %d\n", ret);
+		goto out;
+	}
+
+	ret = get_msg_90_config(dev);
+	if (ret < 0) {
+		error("Error, cannot set config: %d\n", ret);
+		goto out;
+	}
+
+	ret = get_msg_36(dev);
+	if (ret < 0) {
+		error("Error, cannot get message 0x36: %d\n", ret);
+		goto out;
+	}
+
+	ret = get_msg_20(dev);
+	if (ret < 0) {
+		error("Error, cannot get message 0x20: %d\n", ret);
+		goto out;
+	}
+
+out:
+	return ret;
+}
+
 static int init(goodix_fp_device *dev)
 {
 	int ret;
@@ -958,7 +1002,7 @@ static int init(goodix_fp_device *dev)
 
 	switch (chip_id) {
 	case 0x220c:
-		break;
+		return init_device_220c(dev);
 	case 0x2202:
 	case 0x2207:
 	case 0x2208:
@@ -968,42 +1012,6 @@ static int init(goodix_fp_device *dev)
 	default:
 		error("Unknown device type 0x%04x", chip_id);
 		ret = -EINVAL;
-		goto out;
-	}
-
-	ret = get_msg_a6_otp(dev);
-	if (ret < 0) {
-		error("Error, cannot get OTP: %d\n", ret);
-		goto out;
-	}
-
-	ret = get_msg_e4_psk(dev);
-	if (ret < 0) {
-		error("Error, cannot get message 0xe4: %d\n", ret);
-		goto out;
-	}
-
-	ret = get_msg_d2_handshake(dev);
-	if (ret < 0) {
-		error("Error, cannot perform handshake: %d\n", ret);
-		goto out;
-	}
-
-	ret = get_msg_90_config(dev);
-	if (ret < 0) {
-		error("Error, cannot set config: %d\n", ret);
-		goto out;
-	}
-
-	ret = get_msg_36(dev);
-	if (ret < 0) {
-		error("Error, cannot get message 0x36: %d\n", ret);
-		goto out;
-	}
-
-	ret = get_msg_20(dev);
-	if (ret < 0) {
-		error("Error, cannot get message 0x20: %d\n", ret);
 		goto out;
 	}
 
