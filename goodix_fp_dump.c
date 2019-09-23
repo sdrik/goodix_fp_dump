@@ -16,7 +16,7 @@
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
-#define trace(...) fprintf(stderr, __VA_ARGS__)
+#define debug(...) fprintf(stderr, __VA_ARGS__)
 #define error(...) fprintf(stderr, __VA_ARGS__)
 #define warning(...) fprintf(stderr, __VA_ARGS__)
 
@@ -139,26 +139,26 @@ typedef enum {
 	GOODIX_FP_PACKET_TYPE_CONFIG = 0x90,
 } goodix_fp_packet_type;
 
-static void trace_dump_buffer(const char *message, uint8_t *buffer, int len)
+static void debug_dump_buffer(const char *message, uint8_t *buffer, int len)
 {
 	int i;
 
 	if (buffer == NULL || len <= 0) {
-		trace("Invalid or empty buffer\n");
+		debug("Invalid or empty buffer\n");
 		return;
 	}
 
-	trace("\n");
+	debug("\n");
 	if (message)
-		trace("%s\n", message);
+		debug("%s\n", message);
 
 	for (i = 0; i < len; i++) {
-		trace("%02hhX%c", buffer[i], (((i + 1) % 16) && (i < len - 1)) ? ' ' : '\n');
+		debug("%02hhX%c", buffer[i], (((i + 1) % 16) && (i < len - 1)) ? ' ' : '\n');
 	}
-	trace("\n");
+	debug("\n");
 }
 
-static void trace_dump_buffer_to_file(const char *filename, uint8_t *buffer, int len)
+static void debug_dump_buffer_to_file(const char *filename, uint8_t *buffer, int len)
 {
 	FILE *fp;
 
@@ -174,6 +174,10 @@ static void trace_dump_buffer_to_file(const char *filename, uint8_t *buffer, int
 	fwrite(buffer, 1, len, fp);
 	fclose(fp);
 }
+
+#ifdef TRACE
+#define trace debug
+#define trace_dump_buffer debug_dump_buffer
 
 static void trace_out_packet(goodix_fp_out_packet *packet)
 {
@@ -193,6 +197,24 @@ static void trace_in_packet(goodix_fp_in_packet *packet)
 	trace("size: 0x%02hx %d\n", packet->fields.payload_size, packet->fields.payload_size);
 	trace("\n");
 }
+#else
+#define trace(...) do {} while(0)
+static void trace_dump_buffer(const char *message, uint8_t *buffer, int len)
+{
+	(void) message;
+	(void) buffer;
+	(void) len;
+}
+
+static void trace_out_packet(goodix_fp_out_packet *packet)
+{
+	(void) packet;
+}
+static void trace_in_packet(goodix_fp_in_packet *packet)
+{
+	(void) packet;
+}
+#endif
 
 static int usb_send_data(libusb_device_handle *dev, uint8_t out_ep,
 			 uint8_t *buffer, int len)
@@ -606,7 +628,7 @@ static int get_msg_82(goodix_fp_device *dev)
 	if (ret < 0)
 		goto out;
 
-	trace_dump_buffer("0x82 response: ", response, response_size);
+	debug_dump_buffer("0x82 response: ", response, response_size);
 
 out:
 	return ret;
@@ -622,8 +644,8 @@ static int get_msg_a6_otp(goodix_fp_device *dev)
 				 (uint8_t *)otp, &otp_size);
 	if (ret < 0)
 		goto out;
-	trace_dump_buffer("OTP:", otp, otp_size);
-	trace_dump_buffer_to_file("payload_otp.bin", otp, otp_size);
+	debug_dump_buffer("OTP:", otp, otp_size);
+	debug_dump_buffer_to_file("payload_otp.bin", otp, otp_size);
 out:
 	return ret;
 }
@@ -664,8 +686,8 @@ static int get_msg_e4_psk(goodix_fp_device *dev)
 	 *   - for the HASH it should be 32 bytes representing a sha256 hash
 	 *     of something from the PSK, after unsealing the data
 	 */
-	trace_dump_buffer("PSK:", psk, psk_size);
-	trace_dump_buffer_to_file("payload_psk.bin", psk, psk_size);
+	debug_dump_buffer("PSK:", psk, psk_size);
+	debug_dump_buffer_to_file("payload_psk.bin", psk, psk_size);
 
 	ret = send_packet(dev, GOODIX_FP_PACKET_TYPE_PSK,
 			  request_hash, sizeof(request_hash),
@@ -673,8 +695,8 @@ static int get_msg_e4_psk(goodix_fp_device *dev)
 	if (ret < 0)
 		goto out;
 
-	trace_dump_buffer("HASH:", hash, hash_size);
-	trace_dump_buffer_to_file("payload_hash.bin", hash, hash_size);
+	debug_dump_buffer("HASH:", hash, hash_size);
+	debug_dump_buffer_to_file("payload_hash.bin", hash, hash_size);
 
 out:
 	return ret;
@@ -696,7 +718,7 @@ static int get_msg_d2_handshake(goodix_fp_device *dev)
 	for (i = 0; i < 32; i++)
 		client_hello[i + 8] = 0;
 
-	trace_dump_buffer_to_file("client_random.bin", client_hello + 8, 32);
+	debug_dump_buffer_to_file("client_random.bin", client_hello + 8, 32);
 
 	ret = send_packet(dev,
 			  GOODIX_FP_PACKET_TYPE_HANDSHAKE,
@@ -705,10 +727,10 @@ static int get_msg_d2_handshake(goodix_fp_device *dev)
 	if (ret < 0)
 		goto out;
 
-	trace_dump_buffer_to_file("server_random1.bin", server_identity + 8, 32);
-	trace_dump_buffer_to_file("server_random2.bin", server_identity + 8 + 32, 32);
+	debug_dump_buffer_to_file("server_random1.bin", server_identity + 8, 32);
+	debug_dump_buffer_to_file("server_random2.bin", server_identity + 8 + 32, 32);
 
-	trace_dump_buffer("server_identity:", server_identity, server_identity_size);
+	debug_dump_buffer("server_identity:", server_identity, server_identity_size);
 
 	/* Client reply is not constant, it depends on the server identity.  */
 
@@ -725,7 +747,7 @@ static int get_msg_d2_handshake(goodix_fp_device *dev)
 	if (ret < 0)
 		goto out;
 
-	trace_dump_buffer("server_done:", server_done, server_done_size);
+	debug_dump_buffer("server_done:", server_done, server_done_size);
 
 	/* If we pass this point negotiation succeeded */
 	trace("Hurrah!\n");
@@ -756,7 +778,7 @@ static int get_msg_90_config(goodix_fp_device *dev)
 	uint8_t response[32768] = { 0 };
 	uint16_t response_size = 0;
 
-	trace_dump_buffer("config:", config, sizeof(config));
+	debug_dump_buffer("config:", config, sizeof(config));
 
 	ret = send_packet(dev, GOODIX_FP_PACKET_TYPE_CONFIG,
 			  config, sizeof(config),
@@ -764,7 +786,7 @@ static int get_msg_90_config(goodix_fp_device *dev)
 	if (ret < 0)
 		goto out;
 
-	trace_dump_buffer("0x90 response:", response, response_size);
+	debug_dump_buffer("0x90 response:", response, response_size);
 
 out:
 	return ret;
@@ -783,7 +805,7 @@ static int get_msg_36(goodix_fp_device *dev)
 	if (ret < 0)
 		goto out;
 
-	trace_dump_buffer("0x36 response: ", response, response_size);
+	debug_dump_buffer("0x36 response: ", response, response_size);
 
 out:
 	return ret;
@@ -803,7 +825,7 @@ static int get_msg_20(goodix_fp_device *dev)
 	if (ret < 0)
 		goto out;
 
-	trace_dump_buffer_to_file("payload_image.bin", image, image_size);
+	debug_dump_buffer_to_file("payload_image.bin", image, image_size);
 
 out:
 	return ret;
