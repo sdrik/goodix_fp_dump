@@ -133,6 +133,7 @@ typedef enum {
 	GOODIX_FP_PACKET_TYPE_REPLY = 0xb0,
 	GOODIX_FP_PACKET_TYPE_FIRMWARE_VERSION = 0xa8,
 	GOODIX_FP_PACKET_TYPE_RESET = 0xa2,
+	GOODIX_FP_PACKET_TYPE_CHIP_REG_READ = 0x82,
 	GOODIX_FP_PACKET_TYPE_OTP = 0xa6,
 	GOODIX_FP_PACKET_TYPE_HANDSHAKE = 0xd2,
 	GOODIX_FP_PACKET_TYPE_PSK = 0xe4,
@@ -617,18 +618,80 @@ static int get_msg_a2_reset(goodix_fp_device *dev)
 	return send_packet(dev, GOODIX_FP_PACKET_TYPE_RESET, payload, 2, NULL, NULL);
 }
 
-static int get_msg_82(goodix_fp_device *dev)
+static void swap_each_2_bytes(uint8_t *buffer, uint16_t len)
+{
+	unsigned int i;
+	uint8_t tmp;
+
+	if (len < 2)
+		return;
+
+	for (i = 0; i < len; i += 2) {
+		tmp = buffer[i];
+		buffer[i] = buffer[i + 1];
+		buffer[i + 1] = tmp;
+	}
+}
+
+static int get_msg_82_chip_reg_read(goodix_fp_device *dev, uint16_t reg_start, uint16_t reg_size, uint8_t *response, uint16_t *response_size)
 {
 	int ret;
-	uint8_t payload[5] = {0x00, 0x00, 0x00, 0x04, 0x00 };
-	uint8_t response[32768] = { 0 };
-	uint16_t response_size = 0;
+	uint8_t chip_reg_read_payload[4] = { 0 };
 
-	ret = send_packet(dev, 0x82, payload, 5, response, &response_size);
+	/* The first two bytes are the register start position as big-endian. */
+	chip_reg_read_payload[0] = (reg_start >> 8) & 0xff;
+	chip_reg_read_payload[1] = reg_start & 0xff;
+
+	/* The remaining two bytes are the result size as big-endian. */
+	chip_reg_read_payload[2] = (reg_size >> 8) & 0xff;
+	chip_reg_read_payload[3] = reg_size & 0xff;
+
+	debug_dump_buffer("0x82 payload: ", chip_reg_read_payload, sizeof(chip_reg_read_payload));
+
+	ret = send_packet(dev, GOODIX_FP_PACKET_TYPE_CHIP_REG_READ, chip_reg_read_payload, sizeof(chip_reg_read_payload), response, response_size);
 	if (ret < 0)
 		goto out;
 
-	debug_dump_buffer("0x82 response: ", response, response_size);
+	if (reg_size != *response_size) {
+		ret = -EINVAL;
+		error("Unexpected response size (expected: %d, got: %d)", reg_size, *response_size);
+		goto out;
+	}
+
+	debug_dump_buffer("0x82 response: ", response, *response_size);
+
+	/* 
+	 * Swap each 2 bytes because the response seems to be in some
+	 * mixed-endian order.
+	 */
+	swap_each_2_bytes(response, *response_size);
+
+out:
+	return ret;
+}
+
+static int get_msg_82_chip_reg_read_chip_id(goodix_fp_device *dev, uint32_t *chip_id)
+{
+	int ret;
+	uint8_t response[32768] = { 0 };
+	uint16_t response_size = 0;
+
+	ret = get_msg_82_chip_reg_read(dev, 0, 4, response, &response_size);
+	if (ret < 0)
+		goto out;
+
+	/* After swapping every 2 bytes, values are now in little-endian order */
+	/* XXX Proper endianness conversion is needed if the code is run on big-endian systems. */
+	*chip_id = 0;
+	*chip_id |= response[0];
+	*chip_id |= response[1] << 8;
+	*chip_id |= response[2] << 16;
+	*chip_id |= response[3] << 24;
+
+	/* Discard the least significant byte to get the chip_id */
+	*chip_id >>= 8;
+
+	debug("ChipId: 0x%04x\n\n", *chip_id);
 
 out:
 	return ret;
@@ -851,6 +914,7 @@ static int init(goodix_fp_device *dev)
 {
 	int ret;
 	uint8_t buffer[32768] = { 0 };
+	uint32_t chip_id;
 
 	ret =libusb_control_transfer(dev->usb_device,
 				     LIBUSB_ENDPOINT_IN |
@@ -886,9 +950,24 @@ static int init(goodix_fp_device *dev)
 		goto out;
 	}
 
-	ret = get_msg_82(dev);
+	ret = get_msg_82_chip_reg_read_chip_id(dev, &chip_id);
 	if (ret < 0) {
 		error("Error, cannot get message 0x82: %d\n", ret);
+		goto out;
+	}
+
+	switch (chip_id) {
+	case 0x220c:
+		break;
+	case 0x2202:
+	case 0x2207:
+	case 0x2208:
+		error("Unsupported device type 0x%04x", chip_id);
+		ret = -ENOTSUP;
+		goto out;
+	default:
+		error("Unknown device type 0x%04x", chip_id);
+		ret = -EINVAL;
 		goto out;
 	}
 
