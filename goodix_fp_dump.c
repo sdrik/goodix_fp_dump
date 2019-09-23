@@ -960,7 +960,7 @@ static int init(goodix_fp_device *dev)
 	uint8_t buffer[32768] = { 0 };
 	uint32_t chip_id;
 
-	ret =libusb_control_transfer(dev->usb_device,
+	ret = libusb_control_transfer(dev->usb_device,
 				     LIBUSB_ENDPOINT_IN |
 				     LIBUSB_REQUEST_TYPE_VENDOR |
 				     LIBUSB_RECIPIENT_DEVICE,
