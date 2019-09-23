@@ -63,9 +63,9 @@ def main():
         sys.stderr.write("usage: %s <datafile> [<suffix>]\n" % sys.argv[0])
         return 1
 
-    if sys.argv[2]:
+    try:
         suffix = "_" + sys.argv[2]
-    else:
+    except IndexError:
         suffix = ""
 
     fin = open(sys.argv[1], 'rb')
