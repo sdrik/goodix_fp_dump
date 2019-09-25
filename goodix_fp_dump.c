@@ -996,7 +996,7 @@ static int init(goodix_fp_device *dev)
 
 	ret = get_msg_82_chip_reg_read_chip_id(dev, &chip_id);
 	if (ret < 0) {
-		error("Error, cannot get message 0x82: %d\n", ret);
+		error("Error, cannot get chip id: %d\n", ret);
 		goto out;
 	}
 
