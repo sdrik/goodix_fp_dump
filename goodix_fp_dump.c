@@ -704,7 +704,7 @@ static int get_msg_a6_otp(goodix_fp_device *dev)
 	uint16_t otp_size;
 
 	ret = send_packet_simple(dev, GOODIX_FP_PACKET_TYPE_OTP,
-				 (uint8_t *)otp, &otp_size);
+				 otp, &otp_size);
 	if (ret < 0)
 		goto out;
 	debug_dump_buffer("OTP:", otp, otp_size);
