@@ -592,7 +592,7 @@ static int send_packet_simple(goodix_fp_device *dev,
 {
 	uint8_t payload[2] = { 0 };
 
-	return send_packet(dev, packet_type, payload, 2, response, response_size);
+	return send_packet(dev, packet_type, payload, sizeof(payload), response, response_size);
 }
 
 static int get_msg_a8_firmware_version(goodix_fp_device *dev)
@@ -615,7 +615,7 @@ static int get_msg_a2_reset(goodix_fp_device *dev)
 {
 	uint8_t payload[2] = { 0x01, 0x14 };
 
-	return send_packet(dev, GOODIX_FP_PACKET_TYPE_RESET, payload, 2, NULL, NULL);
+	return send_packet(dev, GOODIX_FP_PACKET_TYPE_RESET, payload, sizeof(payload), NULL, NULL);
 }
 
 static void swap_each_2_bytes(uint8_t *buffer, uint16_t len)
