@@ -86,6 +86,14 @@ static const struct goodix_fp_usb_device_descriptor supported_devices[] = {
 		.output_endpoint = 0x03,
 		.input_endpoint = 0x81,
 	},
+	{
+		/* found on Dell G5 (2019) */
+		.vendor_id = 0x27c6,
+		.product_id = 0x530c,
+		.configuration = 1,
+		.output_endpoint = 0x01,
+		.input_endpoint = 0x83,
+	},
 };
 
 struct _goodix_fp_device {
