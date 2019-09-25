@@ -595,6 +595,13 @@ static int send_packet_simple(goodix_fp_device *dev,
 	return send_packet(dev, packet_type, payload, sizeof(payload), response, response_size);
 }
 
+static int get_msg_00_change_mode_start(goodix_fp_device *dev)
+{
+	uint8_t payload[2] = { 0 };
+
+	return send_packet(dev, 0x00, payload, sizeof(payload), NULL, NULL);
+}
+
 static int get_msg_a8_firmware_version(goodix_fp_device *dev)
 {
 	int ret;
@@ -981,6 +988,12 @@ static int init(goodix_fp_device *dev)
 		goto out;
 	}
 	trace_dump_buffer("<-- received", buffer, ret);
+
+	ret = get_msg_00_change_mode_start(dev);
+	if (ret < 0) {
+		error("Error, cannot change mode to 0x00: %d\n", ret);
+		goto out;
+	}
 
 	ret = get_msg_a8_firmware_version(dev);
 	if (ret < 0) {
