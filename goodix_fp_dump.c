@@ -628,9 +628,22 @@ out:
 
 static int get_msg_a2_reset(goodix_fp_device *dev)
 {
-	uint8_t payload[2] = { 0x01, 0x14 };
+	int ret;
+	uint8_t payload[2] = { 0x05, 0x14 };
+	uint8_t response[32768] = { 0 };
+	uint16_t response_size = 0;
 
-	return send_packet(dev, GOODIX_FP_PACKET_TYPE_RESET, payload, sizeof(payload), NULL, NULL);
+	ret = send_packet(dev, GOODIX_FP_PACKET_TYPE_RESET,
+			  payload, sizeof(payload),
+			  response, &response_size);
+	if (ret < 0)
+		goto out;
+
+	debug_dump_buffer("0xa2 response: ", response, response_size);
+
+out:
+	return ret;
+
 }
 
 static void swap_each_2_bytes(uint8_t *buffer, uint16_t len)
