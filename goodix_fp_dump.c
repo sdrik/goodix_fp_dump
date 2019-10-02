@@ -1073,6 +1073,32 @@ out:
 	return ret;
 }
 
+static int goodix_fp_init(void)
+{
+	int ret;
+
+	ret = libusb_init(NULL);
+	if (ret < 0) {
+		fprintf(stderr, "libusb_init failed: %s\n",
+			libusb_error_name(ret));
+		goto out;
+	}
+
+#if defined(LIBUSB_API_VERSION) && (LIBUSB_API_VERSION >= 0x01000106)
+	libusb_set_option(NULL, LIBUSB_OPTION_LOG_LEVEL, 3);
+#else
+	libusb_set_debug(NULL, 3);
+#endif
+
+out:
+	return ret;
+}
+
+static void goodix_fp_shutdown(void)
+{
+	libusb_exit(NULL);
+}
+
 /* dev is only populated when the function returns 0 */
 static int goodix_fp_device_open(goodix_fp_device **dev)
 {
@@ -1207,29 +1233,20 @@ int main(void)
 	goodix_fp_device *dev;
 	int ret;
 
-	ret = libusb_init(NULL);
-	if (ret < 0) {
-		fprintf(stderr, "libusb_init failed: %s\n",
-			libusb_error_name(ret));
+	ret = goodix_fp_init();
+	if (ret < 0)
 		goto out;
-	}
-
-#if defined(LIBUSB_API_VERSION) && (LIBUSB_API_VERSION >= 0x01000106)
-	libusb_set_option(NULL, LIBUSB_OPTION_LOG_LEVEL, 3);
-#else
-	libusb_set_debug(NULL, 3);
-#endif
 
 	ret = goodix_fp_device_open(&dev);
 	if (ret < 0)
-		goto out_libusb_exit;
+		goto out_shutdown;
 
 	ret = init(dev);
 
 	goodix_fp_device_close(dev);
 
-out_libusb_exit:
-	libusb_exit(NULL);
+out_shutdown:
+	goodix_fp_shutdown();
 out:
 	return ret;
 }
