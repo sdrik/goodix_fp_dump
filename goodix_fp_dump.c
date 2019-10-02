@@ -1004,9 +1004,12 @@ out:
 static int init(goodix_fp_device *dev)
 {
 	int ret;
-	uint8_t buffer[32768] = { 0 };
 	uint32_t chip_id;
 
+#if 0
+	uint8_t buffer[32768] = { 0 };
+
+	/* XXX some devices do not like these USB control transfers */
 	ret = libusb_control_transfer(dev->usb_device,
 				     LIBUSB_ENDPOINT_IN |
 				     LIBUSB_REQUEST_TYPE_VENDOR |
@@ -1028,6 +1031,8 @@ static int init(goodix_fp_device *dev)
 		goto out;
 	}
 	trace_dump_buffer("<-- received", buffer, ret);
+
+#endif
 
 	ret = get_msg_00_change_mode_start(dev);
 	if (ret < 0) {
