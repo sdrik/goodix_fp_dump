@@ -343,7 +343,7 @@ out:
  * Long payloads have some bytes on the 64 bytes boundary of the packet which
  * have to be skipped when copying data.
  */
-static int extract_payload(goodix_fp_in_packet packet, uint8_t *response, uint8_t *checksum)
+static int extract_payload(goodix_fp_in_packet *packet, uint8_t *response, uint8_t *checksum)
 {
 	uint8_t *src;
 	uint8_t *dst;
@@ -351,16 +351,16 @@ static int extract_payload(goodix_fp_in_packet packet, uint8_t *response, uint8_
 	int remaining;
 	unsigned int continuation_packets;
 
-	if (packet.fields.payload_size == 0) {
+	if (packet->fields.payload_size == 0) {
 		error("Invalid payload size, it cannot be 0\n");
 		return -1;
 	}
 
 	/* first chunk */
 	continuation_packets = 0;
-	src = packet.fields.payload;
+	src = packet->fields.payload;
 	dst = response;
-	remaining = packet.fields.payload_size - 1; /* skip checksum byte */
+	remaining = packet->fields.payload_size - 1; /* skip checksum byte */
 
 	/* the first chunk can also be the last one */
 	if (remaining < 64 - 3)
@@ -388,7 +388,7 @@ static int extract_payload(goodix_fp_in_packet packet, uint8_t *response, uint8_
 last_chunk:
 	memcpy(dst, src, remaining);
 
-	*checksum = packet.fields.payload[packet.fields.payload_size - 1 + continuation_packets];
+	*checksum = packet->fields.payload[packet->fields.payload_size - 1 + continuation_packets];
 	return 0;
 }
 
@@ -556,7 +556,7 @@ static int send_packet_full(goodix_fp_device *dev,
 		}
 
 		/* extract the payload, it may contain continuation bytes */
-		ret = extract_payload(reply, response, &response_checksum);
+		ret = extract_payload(&reply, response, &response_checksum);
 		if (ret < 0)
 			goto out;
 
