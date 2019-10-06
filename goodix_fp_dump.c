@@ -26,6 +26,7 @@ struct goodix_fp_usb_device_descriptor {
 	uint8_t configuration;
 	uint8_t output_endpoint;
 	uint8_t input_endpoint;
+	uint8_t protocol_version;
 
 };
 
@@ -37,6 +38,7 @@ static const struct goodix_fp_usb_device_descriptor supported_devices[] = {
 		.configuration = 1,
 		.output_endpoint = 0x03,
 		.input_endpoint = 0x81,
+		.protocol_version = 1,
 	},
 	{
 		/* found on Dell XPS 13 9370/9380 */
@@ -45,6 +47,7 @@ static const struct goodix_fp_usb_device_descriptor supported_devices[] = {
 		.configuration = 1,
 		.output_endpoint = 0x03,
 		.input_endpoint = 0x81,
+		.protocol_version = 1,
 	},
 	{
 		/* found on Dell XPS 13 9570 */
@@ -53,6 +56,7 @@ static const struct goodix_fp_usb_device_descriptor supported_devices[] = {
 		.configuration = 1,
 		.output_endpoint = 0x03,
 		.input_endpoint = 0x81,
+		.protocol_version = 1,
 	},
 	{
 		/* found on Teclast F6 Pro */
@@ -61,6 +65,7 @@ static const struct goodix_fp_usb_device_descriptor supported_devices[] = {
 		.configuration = 1,
 		.output_endpoint = 0x03,
 		.input_endpoint = 0x81,
+		.protocol_version = 1,
 	},
 	{
 		/* found on Lenovo Yoga 730 13IWL-81JR */
@@ -69,6 +74,7 @@ static const struct goodix_fp_usb_device_descriptor supported_devices[] = {
 		.configuration = 1,
 		.output_endpoint = 0x01,
 		.input_endpoint = 0x82,
+		.protocol_version = 1,
 	},
 	{
 		/* found on Lenovo Flex 81SS */
@@ -77,6 +83,7 @@ static const struct goodix_fp_usb_device_descriptor supported_devices[] = {
 		.configuration = 1,
 		.output_endpoint = 0x01,
 		.input_endpoint = 0x82,
+		.protocol_version = 2,
 	},
 	{
 		/* found on Dell G3 3579, Dell G3 3779, and Dell Inspiron 7577 */
@@ -85,6 +92,7 @@ static const struct goodix_fp_usb_device_descriptor supported_devices[] = {
 		.configuration = 1,
 		.output_endpoint = 0x03,
 		.input_endpoint = 0x81,
+		.protocol_version = 1,
 	},
 	{
 		/* found on Dell G5 (2019) */
@@ -93,6 +101,7 @@ static const struct goodix_fp_usb_device_descriptor supported_devices[] = {
 		.configuration = 1,
 		.output_endpoint = 0x01,
 		.input_endpoint = 0x83,
+		.protocol_version = 2,
 	},
 	{
 		/* found on Dell Inspiron 7786 (2019) */
@@ -101,6 +110,7 @@ static const struct goodix_fp_usb_device_descriptor supported_devices[] = {
 		.configuration = 1,
 		.output_endpoint = 0x01,
 		.input_endpoint = 0x83,
+		.protocol_version = 2,
        },
 
 };
