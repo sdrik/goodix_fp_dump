@@ -182,6 +182,120 @@ typedef union {
 	} reply_packet_v2;
 } goodix_fp_in_packet;
 
+typedef union {
+	uint8_t data[16];
+	struct {
+		uint32_t size;
+		uint32_t offset;
+		uint32_t type;
+		uint32_t reserved;
+	} tlv;
+} goodix_fp_tlv_request;
+
+typedef union {
+	uint8_t data[32768];
+	struct __attribute__((packed)) {
+		uint8_t status;
+		uint32_t type;
+		uint32_t length;
+		uint8_t value[];
+	} tlv;
+} goodix_fp_tlv_reply;
+
+typedef union {
+	uint8_t data[592];
+	struct {
+		uint16_t key_name;
+		uint16_t key_policy;
+		uint16_t isv_svn;
+		uint16_t reserved1;
+		uint8_t cpu_svn[16];
+		uint64_t flags_mask;
+		uint64_t xfrm_mask;
+		uint8_t key_id[32];
+		uint32_t misc_mask;
+		uint16_t config_svn;
+		uint8_t reserved2[434];
+		uint32_t plain_text_offset;
+		uint8_t reserved3[12];
+		uint32_t payload_size;
+		uint8_t reserved4[12];
+		uint8_t payload_tag[16];
+		uint8_t payload[];
+	} sealed;
+} sgx_sealed_data_t;
+
+static void debug_dump_sealed_data(const char *message, sgx_sealed_data_t *sealed)
+{
+	int i, len;
+	if (sealed == NULL) {
+		debug("Invalid sealed data\n");
+		return;
+	}
+
+	debug("\n");
+	if (message)
+		debug("%s\n", message);
+
+	debug("key_name: ");
+	switch (sealed->sealed.key_name) {
+	case 0: debug("SGX_KEYSELECT_EINITTOKEN\n"); break;
+	case 1: debug("SGX_KEYSELECT_PROVISION\n"); break;
+	case 2: debug("SGX_KEYSELECT_PROVISION_SEAL\n"); break;
+	case 3: debug("SGX_KEYSELECT_REPORT\n"); break;
+	case 4: debug("SGX_KEYSELECT_SEAL\n"); break;
+	}
+
+	debug("key_policy:");
+	if (sealed->sealed.key_policy & 0x0001) debug(" SGX_KEYPOLICY_MRENCLAVE");
+	if (sealed->sealed.key_policy & 0x0002) debug(" SGX_KEYPOLICY_MRSIGNER");
+	if (sealed->sealed.key_policy & 0x0004) debug(" SGX_KEYPOLICY_NOISVPRODID");
+	if (sealed->sealed.key_policy & 0x0008) debug(" SGX_KEYPOLICY_CONFIGID");
+	if (sealed->sealed.key_policy & 0x0010) debug(" SGX_KEYPOLICY_ISVFAMILYID");
+	if (sealed->sealed.key_policy & 0x0020) debug(" SGX_KEYPOLICY_ISVEXTPRODID");
+	debug("\n");
+
+	debug("isv_svn: 0x%04x\n", sealed->sealed.isv_svn);
+
+	debug("cpu_svn: \n");
+	len = 16;
+	for (i = 0; i < len; i++)
+		debug("%02hhX%c", sealed->sealed.cpu_svn[i], (((i + 1) % 16) && (i < len - 1)) ? ' ' : '\n');
+
+	debug("flags_mask: ");
+	if (sealed->sealed.flags_mask & 0x0000000000000001ULL) debug(" SGX_FLAGS_INITTED");
+	if (sealed->sealed.flags_mask & 0x0000000000000002ULL) debug(" SGX_FLAGS_DEBUG");
+	if (sealed->sealed.flags_mask & 0x0000000000000004ULL) debug(" SGX_FLAGS_MODE64BIT");
+	if (sealed->sealed.flags_mask & 0x0000000000000010ULL) debug(" SGX_FLAGS_PROVISION_KEY");
+	if (sealed->sealed.flags_mask & 0x0000000000000020ULL) debug(" SGX_FLAGS_EINITTOKEN_KEY");
+	if (sealed->sealed.flags_mask & 0x0000000000000080ULL) debug(" SGX_FLAGS_KSS");
+	debug("\n");
+
+	debug("key_id: \n");
+	len = 32;
+	for (i = 0; i < len; i++)
+		debug("%02hhX%c", sealed->sealed.key_id[i], (((i + 1) % 16) && (i < len - 1)) ? ' ' : '\n');
+
+	debug("config_svn: 0x%04x\n", sealed->sealed.config_svn);
+
+	debug("plain_text_offset: %u\n", sealed->sealed.plain_text_offset);
+
+	debug("payload_size: %u\n", sealed->sealed.payload_size);
+
+	debug("payload_tag: \n");
+	len = 16;
+	for (i = 0; i < len; i++)
+		debug("%02hhX%c", sealed->sealed.payload_tag[i], (((i + 1) % 16) && (i < len - 1)) ? ' ' : '\n');
+
+	debug("payload: \n");
+	len = sealed->sealed.payload_size;
+	for (i = 0; i < len; i++)
+		debug("%02hhX%c", sealed->sealed.payload[i], (((i + 1) % 16) && (i < len - 1)) ? ' ' : '\n');
+
+	debug("\n");
+
+}
+
 typedef enum {
 	GOODIX_FP_PACKET_TYPE_REPLY = 0xb0,
 	GOODIX_FP_PACKET_TYPE_FIRMWARE_VERSION = 0xa8,
@@ -1053,7 +1167,7 @@ out:
 	return ret;
 }
 
-static int get_msg_e4_psk(goodix_fp_device *dev)
+static int get_msg_e4_psk_v1(goodix_fp_device *dev)
 {
 	int ret;
 	uint8_t request_psk[4] = "\x01\xb0\x00\x00";
@@ -1103,6 +1217,88 @@ static int get_msg_e4_psk(goodix_fp_device *dev)
 
 out:
 	return ret;
+}
+
+static int get_msg_e4_psk_chunked(goodix_fp_device *dev,
+			          uint32_t type,
+				  uint8_t *response,
+				  uint16_t size)
+{
+	int ret;
+	uint8_t *src;
+	uint8_t *dst;
+
+	goodix_fp_tlv_request req = {
+		.tlv = {
+			.size = 256,
+			.offset = 0,
+			.type = type,
+			.reserved = 0
+		}
+	};
+
+	goodix_fp_tlv_reply reply;
+	uint16_t reply_size;
+
+	src = reply.tlv.value;
+	dst = response;
+
+	while (req.tlv.offset < size) {
+		if ((size - req.tlv.offset) < req.tlv.size) {
+			req.tlv.size = size - req.tlv.offset;
+		}
+
+		ret = send_packet(dev, GOODIX_FP_PACKET_TYPE_PSK,
+				  req.data, sizeof(req),
+				  reply.data, &reply_size);
+		if (ret < 0)
+			goto out;
+
+		if (reply.tlv.type != req.tlv.type) {
+			ret = -EINVAL;
+			error("Unexpected response type (expected: 0x%x, got: 0x%x)", req.tlv.type, reply.tlv.type);
+			goto out;
+		}
+
+		memcpy(dst, src, reply.tlv.length);
+		dst += reply.tlv.length;
+		req.tlv.offset += reply.tlv.length;
+	}
+out:
+	return ret;
+}
+
+static int get_msg_e4_psk_v2(goodix_fp_device *dev)
+{
+	int ret;
+	sgx_sealed_data_t sealed;
+	uint8_t hash[32];
+
+	ret = get_msg_e4_psk_chunked(dev, 0xbb010002, sealed.data, sizeof(sealed));
+	if (ret < 0)
+		goto out;
+	debug_dump_buffer("PSK:", sealed.data, sizeof(sealed));
+	debug_dump_buffer_to_file("payload_psk.bin", sealed.data, sizeof(sealed));
+	debug_dump_sealed_data("Sealed data:", &sealed);
+
+	ret = get_msg_e4_psk_chunked(dev, 0xbb020001, hash, sizeof(hash));
+	if (ret < 0)
+		goto out;
+	debug_dump_buffer("HASH:", hash, sizeof(hash));
+	debug_dump_buffer_to_file("payload_hash.bin", hash, sizeof(hash));
+out:
+	return ret;
+}
+
+static int get_msg_e4_psk(goodix_fp_device *dev)
+{
+	switch (dev->desc->protocol_version) {
+	case 1:
+		return get_msg_e4_psk_v1(dev);
+	case 2:
+		return get_msg_e4_psk_v2(dev);
+	}
+	return -1;
 }
 
 /* some negotiation happens with packet d2 */
