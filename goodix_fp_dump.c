@@ -134,6 +134,14 @@ typedef union {
 		uint16_t payload_size;
 		uint8_t payload[61];
 	} fields;
+	struct __attribute__((packed)) {
+		uint8_t header_type;
+		uint16_t packet_size;
+		uint8_t header_checksum;
+		uint8_t type;
+		uint16_t payload_size;
+		uint8_t payload[57];
+	} fields_v2;
 	struct {
 		uint8_t type;
 		uint8_t payload[63];
@@ -148,12 +156,30 @@ typedef union {
 		uint8_t payload[32765];
 	} fields;
 	struct __attribute__((packed)) {
+		uint8_t header_type;
+		uint16_t packet_size;
+		uint8_t header_checksum;
+		uint8_t type;
+		uint16_t payload_size;
+		uint8_t payload[32761];
+	} fields_v2;
+	struct __attribute__((packed)) {
 		uint8_t type;
 		uint16_t payload_size;
 		uint8_t reply_to;
 		uint8_t status;
 		uint8_t checksum;
 	} reply_packet;
+	struct __attribute__((packed)) {
+		uint8_t header_type;
+		uint16_t packet_size;
+		uint8_t header_checksum;
+		uint8_t type;
+		uint16_t payload_size;
+		uint8_t reply_to;
+		uint8_t status;
+		uint8_t checksum;
+	} reply_packet_v2;
 } goodix_fp_in_packet;
 
 typedef enum {
@@ -218,11 +244,27 @@ static void trace_out_packet(goodix_fp_out_packet *packet)
 		trace("size: 0x%02hx %d\n", packet->fields.payload_size, packet->fields.payload_size);
 }
 
+static void trace_out_packet_v2(goodix_fp_out_packet *packet)
+{
+	trace("\n");
+	trace("out packet\n");
+	trace("type: 0x%02hhx %d\n", packet->fields_v2.type, packet->fields_v2.type);
+	trace("size: 0x%02hx %d\n", packet->fields_v2.payload_size, packet->fields_v2.payload_size);
+}
+
 static void trace_in_packet(goodix_fp_in_packet *packet)
 {
 	trace("in packet\n");
 	trace("type: 0x%02hhx %d\n", packet->fields.type, packet->fields.type);
 	trace("size: 0x%02hx %d\n", packet->fields.payload_size, packet->fields.payload_size);
+	trace("\n");
+}
+
+static void trace_in_packet_v2(goodix_fp_in_packet *packet)
+{
+	trace("in packet\n");
+	trace("type: 0x%02hhx %d\n", packet->fields_v2.type, packet->fields_v2.type);
+	trace("size: 0x%02hx %d\n", packet->fields_v2.payload_size, packet->fields_v2.payload_size);
 	trace("\n");
 }
 #else
@@ -238,7 +280,15 @@ static void trace_out_packet(goodix_fp_out_packet *packet)
 {
 	(void) packet;
 }
+static void trace_out_packet_v2(goodix_fp_out_packet *packet)
+{
+	(void) packet;
+}
 static void trace_in_packet(goodix_fp_in_packet *packet)
+{
+	(void) packet;
+}
+static void trace_in_packet_v2(goodix_fp_in_packet *packet)
 {
 	(void) packet;
 }
@@ -411,6 +461,51 @@ last_chunk:
 	return 0;
 }
 
+static int extract_payload_v2(goodix_fp_in_packet *packet, uint8_t *response, uint8_t *checksum)
+{
+	uint8_t *src;
+	uint8_t *dst;
+	int chunk_size;
+	int remaining;
+
+	if (packet->fields_v2.payload_size == 0) {
+		error("Invalid payload size, it cannot be 0\n");
+		return -1;
+	}
+
+	/* first chunk */
+	src = packet->fields_v2.payload;
+	dst = response;
+	remaining = packet->fields_v2.payload_size - 1; /* skip checksum byte */
+
+	/* the first chunk can also be the last one */
+	if (remaining < 64 - 3 - 4)
+		goto last_chunk;
+
+	/* first of multiple chunks */
+	chunk_size = 64 - 3 - 4;
+	memcpy(dst, src, chunk_size);
+	src += chunk_size;
+	dst += chunk_size;
+	remaining -= chunk_size;
+
+	/* copy most of the data, skipping the continuation bytes */
+	chunk_size = 64;
+	while (remaining >= chunk_size) {
+		memcpy(dst, src, chunk_size);
+		src += chunk_size;
+		dst += chunk_size;
+		remaining -= chunk_size;
+	}
+
+	/* copy the last chunk */
+last_chunk:
+	memcpy(dst, src, remaining);
+
+	*checksum = packet->fields_v2.payload[packet->fields_v2.payload_size - 1];
+	return 0;
+}
+
 static uint8_t calc_checksum(uint8_t packet_type, uint8_t *payload, uint16_t payload_size)
 {
 	unsigned int i;
@@ -502,7 +597,85 @@ out:
 	return ret;
 }
 
-static int send_packet_full(goodix_fp_device *dev,
+static int send_payload_v2(goodix_fp_device *dev,
+			goodix_fp_packet_type packet_type,
+			uint8_t *request, uint16_t request_size)
+{
+	int ret;
+	uint8_t *src;
+	uint8_t *dst;
+	int remaining;
+	int chunk_size;
+	uint8_t checksum;
+	goodix_fp_out_packet packet = {
+		.data = { 0 }
+	};
+
+	checksum = calc_checksum(packet_type, request, request_size);
+
+	/* first packet */
+	packet.fields_v2.header_type = 0xa0;
+	packet.fields_v2.packet_size = request_size + 5;
+	packet.fields_v2.header_checksum = packet.fields_v2.header_type + (packet.fields_v2.packet_size & 0xff) + (packet.fields_v2.packet_size >> 8);
+	packet.fields_v2.type = packet_type;
+	packet.fields_v2.payload_size = request_size + 1; /* extra checkum byte */
+
+	src = request;
+	dst = packet.fields_v2.payload;
+	remaining = request_size;
+
+	/* the first packet can also be the last one */
+	if (remaining < 64 - 3 - 4) {
+		packet.fields_v2.payload[remaining] = checksum;
+		goto send_last_packet;
+	}
+
+	/* first of multiple packets */
+	chunk_size = 64 - 3 - 4;
+	memcpy(dst, src, chunk_size);
+
+	trace_out_packet_v2(&packet);
+	ret = usb_send_data(dev->usb_device, dev->desc->output_endpoint,
+			    packet.data, sizeof(packet.data));
+	if (ret < 0)
+		goto out;
+
+	remaining -= chunk_size;
+	src += chunk_size;
+
+	/* continuation packets */
+	dst = packet.data;
+	chunk_size = 64;
+	while (remaining >= chunk_size) {
+		memcpy(dst, src, chunk_size);
+
+		trace_out_packet_v2(&packet);
+		ret = usb_send_data(dev->usb_device, dev->desc->output_endpoint,
+				    packet.data, sizeof(packet.data));
+		if (ret < 0)
+			goto out;
+
+		src += chunk_size;
+		remaining -= chunk_size;
+	}
+
+	/* last continuation packet */
+	packet.data[remaining] = checksum;
+
+send_last_packet:
+	memcpy(dst, src, remaining);
+
+	trace_out_packet_v2(&packet);
+	ret = usb_send_data(dev->usb_device, dev->desc->output_endpoint,
+			    packet.data, sizeof(packet.data));
+	if (ret < 0)
+		goto out;
+
+out:
+	return ret;
+}
+
+static int send_packet_full_v1(goodix_fp_device *dev,
 			    goodix_fp_packet_type packet_type,
 			    uint8_t *request, uint16_t request_size,
 			    uint8_t *response, uint16_t *response_size,
@@ -601,6 +774,126 @@ static int send_packet_full(goodix_fp_device *dev,
 out:
 	return ret;
 
+}
+
+static int send_packet_full_v2(goodix_fp_device *dev,
+			    goodix_fp_packet_type packet_type,
+			    uint8_t *request, uint16_t request_size,
+			    uint8_t *response, uint16_t *response_size,
+			    bool verify_data_checksum)
+{
+	int size = request_size + 5;
+	goodix_fp_out_packet packet = {
+		.fields_v2 = {
+			.header_type = 0xa0,
+			.packet_size = size,
+			.header_checksum = 0xa0 + (size & 0xff) + (size >> 8),
+			.type = packet_type,
+			/* the extra byte is for the checkum */
+			.payload_size = request_size + 1,
+			.payload = { 0 }
+		}
+	};
+	goodix_fp_in_packet reply = {
+		.data = { 0 }
+	};
+	int ret;
+	uint8_t response_checksum;
+	uint8_t expected_checksum;
+
+	ret = send_payload_v2(dev, packet_type, request, request_size);
+	if (ret < 0)
+		goto out;
+
+	ret = usb_read_data(dev->usb_device, dev->desc->input_endpoint,
+			    reply.data, sizeof(reply.data));
+	if (ret < 0)
+		goto out;
+
+	trace_in_packet_v2(&reply);
+
+	if (reply.fields_v2.type != GOODIX_FP_PACKET_TYPE_REPLY) {
+		error("Invalid reply to packet %02x\n", packet.fields_v2.type);
+		ret = -1;
+		goto out;
+	}
+
+	response_checksum = reply.fields_v2.payload[reply.fields_v2.payload_size - 1];
+	expected_checksum = calc_checksum(reply.fields_v2.type,
+					  reply.fields_v2.payload,
+					  reply.fields_v2.payload_size - 1);
+
+	if (response_checksum != expected_checksum) {
+		error("Invalid checksum for reply packet %02x\n", packet.fields_v2.type);
+		ret = -1;
+		goto out;
+	}
+
+	if (reply.reply_packet_v2.reply_to != packet.fields_v2.type) {
+		error("Unexpected reply to packet %02x (got %02x)\n", packet.fields_v2.type, reply.reply_packet_v2.reply_to);
+		ret = -1;
+		goto out;
+	}
+
+	if (reply.reply_packet_v2.status != 0x1)
+		warning("Unexpected status for packet %02x (expected 0x01, got 0x%02x)\n", packet.fields_v2.type, reply.reply_packet_v2.status);
+
+	if (response) {
+		ret = usb_read_data(dev->usb_device, dev->desc->input_endpoint,
+				    reply.data, sizeof(reply.data));
+		if (ret < 0)
+			goto out;
+
+		trace_in_packet_v2(&reply);
+
+		if (reply.fields_v2.type != packet_type) {
+			error("Invalid input packet %02x (got: %02x)\n", packet_type, reply.fields_v2.type);
+			ret = -1;
+			goto out;
+		}
+
+		/* extract the payload, it may contain continuation bytes */
+		ret = extract_payload_v2(&reply, response, &response_checksum);
+		if (ret < 0)
+			goto out;
+
+		if (verify_data_checksum) {
+			expected_checksum = calc_checksum(reply.fields_v2.type,
+							  response,
+							  reply.fields_v2.payload_size - 1);
+		} else {
+			expected_checksum = 0x88;
+		}
+
+		if (response_checksum != expected_checksum) {
+			error("Invalid checksum for input packet %02x\n", reply.fields_v2.type);
+			ret = -1;
+			goto out;
+		}
+
+		*response_size = reply.fields_v2.payload_size - 1;
+	}
+
+	ret = 0;
+
+out:
+	return ret;
+
+}
+
+static int send_packet_full(goodix_fp_device *dev,
+			    goodix_fp_packet_type packet_type,
+			    uint8_t *request, uint16_t request_size,
+			    uint8_t *response, uint16_t *response_size,
+			    bool verify_data_checksum)
+{
+	switch (dev->desc->protocol_version) {
+	case 1:
+		return send_packet_full_v1(dev, packet_type, request, request_size, response, response_size, verify_data_checksum);
+	case 2:
+		return send_packet_full_v2(dev, packet_type, request, request_size, response, response_size, verify_data_checksum);
+	}
+	return -1;
 }
 
 /* Usually packets do not need to change the verify_data_checksum parameter. */
