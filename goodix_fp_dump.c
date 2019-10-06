@@ -164,6 +164,12 @@ typedef union {
 		uint8_t payload[32761];
 	} fields_v2;
 	struct __attribute__((packed)) {
+		uint8_t header_type;
+		uint16_t packet_size;
+		uint8_t header_checksum;
+		uint8_t payload[32764];
+	} fields_v2b;
+	struct __attribute__((packed)) {
 		uint8_t type;
 		uint16_t payload_size;
 		uint8_t reply_to;
@@ -620,6 +626,45 @@ last_chunk:
 	return 0;
 }
 
+static int extract_payload_v2b(goodix_fp_in_packet *packet, uint8_t *response)
+{
+	uint8_t *src;
+	uint8_t *dst;
+	int chunk_size;
+	int remaining;
+
+	/* first chunk */
+	src = packet->fields_v2b.payload;
+	dst = response;
+	remaining = packet->fields_v2b.packet_size - 4;
+
+	/* the first chunk can also be the last one */
+	if (remaining < 64 - 4)
+		goto last_chunk;
+
+	/* first of multiple chunks */
+	chunk_size = 64 - 4;
+	memcpy(dst, src, chunk_size);
+	src += chunk_size;
+	dst += chunk_size;
+	remaining -= chunk_size;
+
+	/* copy most of the data, skipping the continuation bytes */
+	chunk_size = 64;
+	while (remaining >= chunk_size) {
+		memcpy(dst, src, chunk_size);
+		src += chunk_size;
+		dst += chunk_size;
+		remaining -= chunk_size;
+	}
+
+	/* copy the last chunk */
+last_chunk:
+	memcpy(dst, src, remaining);
+
+	return 0;
+}
+
 static uint8_t calc_checksum(uint8_t packet_type, uint8_t *payload, uint16_t payload_size)
 {
 	unsigned int i;
@@ -960,32 +1005,41 @@ static int send_packet_full_v2(goodix_fp_device *dev,
 
 		trace_in_packet_v2(&reply);
 
-		if (reply.fields_v2.type != packet_type) {
-			error("Invalid input packet %02x (got: %02x)\n", packet_type, reply.fields_v2.type);
-			ret = -1;
-			goto out;
+		switch (reply.fields_v2.header_type) {
+		case 0xa0:
+			if (reply.fields_v2.type != packet_type) {
+				error("Invalid input packet %02x (got: %02x)\n", packet_type, reply.fields_v2.type);
+				ret = -1;
+				goto out;
+			}
+
+			/* extract the payload, it may contain continuation bytes */
+			ret = extract_payload_v2(&reply, response, &response_checksum);
+			if (ret < 0)
+				goto out;
+
+			if (verify_data_checksum) {
+				expected_checksum = calc_checksum(reply.fields_v2.type,
+								  response,
+								  reply.fields_v2.payload_size - 1);
+			} else {
+				expected_checksum = 0x88;
+			}
+
+			if (response_checksum != expected_checksum) {
+				error("Invalid checksum for input packet %02x\n", reply.fields_v2.type);
+				ret = -1;
+				goto out;
+			}
+
+			*response_size = reply.fields_v2.payload_size - 1;
+			break;
+		case 0xb0:
+			ret = extract_payload_v2b(&reply, response);
+			if (ret < 0)
+				goto out;
+			break;
 		}
-
-		/* extract the payload, it may contain continuation bytes */
-		ret = extract_payload_v2(&reply, response, &response_checksum);
-		if (ret < 0)
-			goto out;
-
-		if (verify_data_checksum) {
-			expected_checksum = calc_checksum(reply.fields_v2.type,
-							  response,
-							  reply.fields_v2.payload_size - 1);
-		} else {
-			expected_checksum = 0x88;
-		}
-
-		if (response_checksum != expected_checksum) {
-			error("Invalid checksum for input packet %02x\n", reply.fields_v2.type);
-			ret = -1;
-			goto out;
-		}
-
-		*response_size = reply.fields_v2.payload_size - 1;
 	}
 
 	ret = 0;
@@ -1301,6 +1355,20 @@ static int get_msg_e4_psk(goodix_fp_device *dev)
 	return -1;
 }
 
+static int get_msg_d0_handshake(goodix_fp_device *dev)
+{
+	int ret;
+	uint8_t hello[3] = { 0 };
+	uint8_t reply[52] = { 0 };
+	uint16_t reply_size;
+	ret = send_packet(dev, 0xd0, hello, sizeof(hello), reply, &reply_size);
+	if (ret < 0)
+		goto out;
+	debug_dump_buffer("0xd0 response: ", reply, 52);
+out:
+	return ret;
+}
+
 /* some negotiation happens with packet d2 */
 static int get_msg_d2_handshake(goodix_fp_device *dev)
 {
@@ -1494,6 +1562,11 @@ static int init_device_220c(goodix_fp_device * dev)
 		goto out;
 	}
 
+	ret = get_msg_d0_handshake(dev);
+	if (ret < 0) {
+		error("Error, cannot perform handshake: %d\n", ret);
+		goto out;
+	}
 	ret = get_msg_d2_handshake(dev);
 	if (ret < 0) {
 		error("Error, cannot perform handshake: %d\n", ret);
